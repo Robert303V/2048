@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>2048 - Bot Solver & Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <!-- Header -->
+        <header class="header-row">
+            <div class="title-group">
+                <h1>2048</h1>
+                <div class="subtitle">EXPECTIMAX BOT</div>
+            </div>
+            <div class="scores-group">
+                <div class="score-box">
+                    <div class="score-lbl">SCORE</div>
+                    <div class="score-val" id="score-display">0</div>
+                </div>
+                <div class="score-box">
+                    <div class="score-lbl">BEST</div>
+                    <div class="score-val" id="best-display">61356</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Top Action Buttons -->
+        <div class="controls-bar">
+            <button class="btn btn-bot" id="btn-bot">Run Bot</button>
+            <button class="btn btn-step" id="btn-step">Step</button>
+            <button class="btn btn-undo" id="btn-undo">Undo</button>
+            <button class="btn btn-speed" id="btn-speed">Normal</button>
+            <button class="btn btn-reset" id="btn-reset">Reset</button>
+        </div>
+
+        <!-- Board Wrapper -->
+        <div class="board-wrapper" id="board-wrapper">
+            <div class="grid-board" id="grid-board">
+                <!-- 16 Static Background Sockets -->
+                <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+            </div>
+
+            <div class="tile-container" id="tile-container"></div>
+
+            <div class="milestone-banner" id="milestone-banner">🎉 2048 Unlocked! Keep Going!</div>
+
+            <div class="game-over-overlay" id="game-over-overlay">
+                <div class="game-over-title">Game Over!</div>
+                <div class="game-over-desc" id="game-over-desc">Final Score: 0</div>
+                <button class="btn" style="padding: 10px 20px; font-size: 15px;" onclick="resetGame()">Try Again</button>
+            </div>
+        </div>
+
+        <!-- Live Metrics Dashboard -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-title">MOVES</div>
+                <div class="stat-val" id="stat-moves">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">MAX TILE</div>
+                <div class="stat-val" id="stat-maxtile">2</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">EMPTY</div>
+                <div class="stat-val" id="stat-empty">14/16</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">LAST MOVE</div>
+                <div class="stat-val" id="stat-lastmove">-</div>
+            </div>
+        </div>
+
+        <!-- Footer Buttons & Legend -->
+        <div class="footer-bar">
+            <div class="footer-btn-group">
+                <button class="footer-btn" id="btn-theme">Theme: Classic</button>
+                <button class="footer-btn" id="btn-sound">Sound: ON</button>
+            </div>
+            <div class="games-counter" id="games-counter">Games: 13</div>
+        </div>
+
+        <div class="shortcuts-legend">
+            Space: Bot &bull; N: Step &bull; U: Undo &bull; S: Speed &bull; T: Theme &bull; M: Sound
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="sound.js"></script>
+    <script src="bot.js"></script>
+    <script src="game.js"></script>
+
+    <script>
+        // UI & Animation Controller
+        const game = new GameEngine();
+        let isBotRunning = false;
+        let botTimer = null;
+        let speedIndex = 0;
+        const SPEEDS = [
+            { name: "Normal", delay: 90 },
+            { name: "Fast", delay: 30 },
+            { name: "Turbo", delay: 10 }
+        ];
+
+        let isDarkTheme = localStorage.getItem('2048_dark_theme') === 'true';
+        if (isDarkTheme) document.body.classList.add('dark-theme');
+
+        const tileContainer = document.getElementById('tile-container');
+        const scoreDisplay = document.getElementById('score-display');
+        const bestDisplay = document.getElementById('best-display');
+        const statMoves = document.getElementById('stat-moves');
+        const statMaxTile = document.getElementById('stat-maxtile');
+        const statEmpty = document.getElementById('stat-empty');
+        const statLastMove = document.getElementById('stat-lastmove');
+        const gamesCounter = document.getElementById('games-counter');
+        const btnBot = document.getElementById('btn-bot');
+        const btnTheme = document.getElementById('btn-theme');
+        const btnSound = document.getElementById('btn-sound');
+        const btnSpeed = document.getElementById('btn-speed');
+        const milestoneBanner = document.getElementById('milestone-banner');
+        const gameOverOverlay = document.getElementById('game-over-overlay');
+        const gameOverDesc = document.getElementById('game-over-desc');
+
+        function updateUI(justSpawned = null, justMerged = false) {
+            scoreDisplay.textContent = game.score.toLocaleString();
+            bestDisplay.textContent = game.highScore.toLocaleString();
+            statMoves.textContent = game.moves.toLocaleString();
+            statMaxTile.textContent = game.getMaxTile().toLocaleString();
+            statEmpty.textContent = `${game.getEmptyCells().length}/16`;
+            statLastMove.textContent = game.lastMove ? game.lastMove.toUpperCase() : '-';
+            gamesCounter.textContent = `Games: ${game.gamesPlayed}`;
+            btnSound.textContent = window.soundManager.muted ? 'Sound: OFF' : 'Sound: ON';
+            btnTheme.textContent = isDarkTheme ? 'Theme: Dark' : 'Theme: Classic';
+
+            // Render Tiles
+            renderTiles(justSpawned, justMerged);
+
+            if (game.gameOver) {
+                gameOverDesc.textContent = `Final Score: ${game.score.toLocaleString()} | Max Tile: ${game.getMaxTile().toLocaleString()}`;
+                gameOverOverlay.classList.add('active');
+                stopBot();
+            } else {
+                gameOverOverlay.classList.remove('active');
+            }
+        }
+
+        function renderTiles(justSpawned = null, justMerged = false) {
+            tileContainer.innerHTML = '';
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 4; c++) {
+                    const val = game.grid[r][c];
+                    if (val === 0) continue;
+
+                    const tile = document.createElement('div');
+                    tile.className = `tile tile-${val}`;
+                    
+                    const leftPct = (c * 25);
+                    const topPct = (r * 25);
+                    tile.style.left = `calc(${leftPct}% + ${c * 2.25}px)`;
+                    tile.style.top = `calc(${topPct}% + ${r * 2.25}px)`;
+
+                    const inner = document.createElement('div');
+                    inner.className = 'tile-inner';
+                    inner.textContent = val;
+
+                    if (justSpawned && justSpawned.r === r && justSpawned.c === c) {
+                        tile.classList.add('tile-new');
+                    } else if (justMerged) {
+                        tile.classList.add('tile-merged');
+                    }
+
+                    tile.appendChild(inner);
+                    tileContainer.appendChild(tile);
+                }
+            }
+        }
+
+        function triggerMilestone(val) {
+            milestoneBanner.textContent = `🎉 ${val} Unlocked! Keep Going!`;
+            milestoneBanner.classList.add('active');
+            window.soundManager.playMilestone();
+            setTimeout(() => {
+                milestoneBanner.classList.remove('active');
+            }, 3000);
+        }
+
+        function handleMove(direction) {
+            const res = game.move(direction);
+            if (res.moved) {
+                if (res.justMilestone) {
+                    triggerMilestone(res.justMilestone);
+                } else if (res.highestMerged > 0) {
+                    window.soundManager.playMerge(res.highestMerged);
+                } else {
+                    window.soundManager.playSlide();
+                }
+
+                updateUI(res.spawn, res.highestMerged > 0);
+
+                if (game.gameOver) {
+                    window.soundManager.playGameOver();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function stepBot() {
+            if (game.gameOver) return;
+            const bestMove = window.ExpectimaxBot.getBestMove(game.grid);
+            if (bestMove) {
+                handleMove(bestMove);
+            }
+        }
+
+        function runBotLoop() {
+            if (!isBotRunning || game.gameOver) {
+                stopBot();
+                return;
+            }
+            const bestMove = window.ExpectimaxBot.getBestMove(game.grid);
+            if (bestMove) {
+                handleMove(bestMove);
+                botTimer = setTimeout(runBotLoop, SPEEDS[speedIndex].delay);
+            } else {
+                stopBot();
+            }
+        }
+
+        function startBot() {
+            isBotRunning = true;
+            btnBot.textContent = 'Pause Bot';
+            btnBot.classList.add('active');
+            runBotLoop();
+        }
+
+        function stopBot() {
+            isBotRunning = false;
+            if (botTimer) clearTimeout(botTimer);
+            btnBot.textContent = 'Run Bot';
+            btnBot.classList.remove('active');
+        }
+
+        function toggleBot() {
+            if (isBotRunning) stopBot();
+            else startBot();
+        }
+
+        function resetGame() {
+            stopBot();
+            game.reset(true);
+            updateUI();
+        }
+
+        function undoMove() {
+            stopBot();
+            if (game.undo()) {
+                updateUI();
+            }
+        }
+
+        function toggleTheme() {
+            isDarkTheme = !isDarkTheme;
+            localStorage.setItem('2048_dark_theme', isDarkTheme);
+            document.body.classList.toggle('dark-theme', isDarkTheme);
+            btnTheme.textContent = isDarkTheme ? 'Theme: Dark' : 'Theme: Classic';
+        }
+
+        function toggleSound() {
+            const isMuted = window.soundManager.toggleMute();
+            btnSound.textContent = isMuted ? 'Sound: OFF' : 'Sound: ON';
+        }
+
+        function cycleSpeed() {
+            speedIndex = (speedIndex + 1) % SPEEDS.length;
+            btnSpeed.textContent = SPEEDS[speedIndex].name;
+        }
+
+        // Attach Button Listeners
+        btnBot.addEventListener('click', toggleBot);
+        document.getElementById('btn-step').addEventListener('click', () => { stopBot(); stepBot(); });
+        document.getElementById('btn-undo').addEventListener('click', undoMove);
+        btnSpeed.addEventListener('click', cycleSpeed);
+        document.getElementById('btn-reset').addEventListener('click', resetGame);
+        btnTheme.addEventListener('click', toggleTheme);
+        btnSound.addEventListener('click', toggleSound);
+
+        // Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                e.preventDefault();
+            }
+            if (e.key === ' ' || e.code === 'Space') {
+                toggleBot();
+            } else if (e.key === 'n' || e.key === 'N') {
+                stopBot();
+                stepBot();
+            } else if (e.key === 'u' || e.key === 'U') {
+                undoMove();
+            } else if (e.key === 's' || e.key === 'S') {
+                cycleSpeed();
+            } else if (e.key === 't' || e.key === 'T') {
+                toggleTheme();
+            } else if (e.key === 'm' || e.key === 'M') {
+                toggleSound();
+            } else if (e.key === 'r' || e.key === 'R') {
+                resetGame();
+            } else if (!isBotRunning) {
+                if (e.key === 'ArrowLeft') handleMove('left');
+                else if (e.key === 'ArrowRight') handleMove('right');
+                else if (e.key === 'ArrowUp') handleMove('up');
+                else if (e.key === 'ArrowDown') handleMove('down');
+            }
+        });
+
+        // Touch & Swipe Controls (Mobile Friendly)
+        let touchStartX = 0;
+        let touchStartY = 0;
+        const boardWrapper = document.getElementById('board-wrapper');
+
+        boardWrapper.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+
+        boardWrapper.addEventListener('touchend', (e) => {
+            if (isBotRunning || e.changedTouches.length === 0) return;
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            const dy = e.changedTouches[0].clientY - touchStartY;
+            const absX = Math.abs(dx);
+            const absY = Math.abs(dy);
+
+            if (Math.max(absX, absY) > 28) {
+                if (absX > absY) {
+                    handleMove(dx > 0 ? 'right' : 'left');
+                } else {
+                    handleMove(dy > 0 ? 'down' : 'up');
+                }
+            }
+        }, { passive: true });
+
+        // Initial UI render
+        updateUI();
+    </script>
+</body>
+</html>
