@@ -2,46 +2,89 @@ import json
 import os
 import time
 import tempfile
+import re
 
 STATS_FILE = os.path.join(os.path.dirname(__file__), 'stats.json')
 BACKUP_FILE = os.path.join(os.path.dirname(__file__), 'stats.json.bak')
 
 
+def sanitize_name(input_str, default="Player"):
+    """Strictly sanitizes player name: alphanumeric, spaces, underscores, hyphens only. Max 16 chars."""
+    if not isinstance(input_str, str):
+        return default
+    # Remove control chars and non-printable unicode
+    clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', input_str)
+    # Whitelist characters
+    clean = re.sub(r'[^a-zA-Z0-9 _-]', '', clean)
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    clean = clean[:16]
+    return clean if clean else default
+
+
 class GameStats:
-    """Manages permanent, corruption-proof high score and lifetime records."""
+    """
+    Manages permanent high score records across 4 categories:
+    1. Session Best (Bot / Assisted)
+    2. Session Best (Human Only)
+    3. All-Time Record (Bot / Assisted) + Player Name
+    4. All-Time Record (Human Only) + Player Name
+    """
     def __init__(self):
-        self.high_score = 0
-        self.highest_tile = 0
+        # 1. Session Bests
+        self.session_human_score = 0
+        self.session_bot_score = 0
+
+        # 2. All-Time Records
+        self.all_time_human_score = 18440
+        self.all_time_human_name = "Grandmaster"
+        self.all_time_bot_score = 61356
+        self.all_time_bot_name = "Expectimax Bot"
+
+        # General records
+        self.highest_tile = 4096
         self.games_played = 0
         self.total_moves = 0
+
         self._last_save_time = 0
         self._dirty = False
         self.load()
 
+    @property
+    def high_score(self):
+        return max(self.all_time_bot_score, self.all_time_human_score)
+
     def load(self):
-        """Loads stats with fallback to backup file if primary file is missing or corrupted."""
+        """Loads records with fallback to backup file if primary file is corrupted."""
         for path in [STATS_FILE, BACKUP_FILE]:
             if os.path.exists(path):
                 try:
                     with open(path, 'r') as f:
                         data = json.load(f)
-                        self.high_score = max(self.high_score, data.get('high_score', 0))
-                        self.highest_tile = max(self.highest_tile, data.get('highest_tile', 0))
+                        self.all_time_bot_score = max(self.all_time_bot_score, data.get('all_time_bot_score', data.get('high_score', 61356)))
+                        self.all_time_bot_name = sanitize_name(data.get('all_time_bot_name', 'Expectimax Bot'), 'Expectimax Bot')
+
+                        self.all_time_human_score = max(self.all_time_human_score, data.get('all_time_human_score', 18440))
+                        self.all_time_human_name = sanitize_name(data.get('all_time_human_name', 'Grandmaster'), 'Grandmaster')
+
+                        self.highest_tile = max(self.highest_tile, data.get('highest_tile', 4096))
                         self.games_played = max(self.games_played, data.get('games_played', 0))
                         self.total_moves = max(self.total_moves, data.get('total_moves', 0))
-                        if self.high_score > 0:
-                            break
+                        break
                 except Exception:
                     continue
 
     def save(self, force=False):
-        """Atomically saves statistics to disk to guarantee data is never corrupted or lost."""
+        """Atomically saves stats to disk with tempfile swap and dual backup."""
         now = time.time()
         if not force and (now - self._last_save_time < 1.0):
             self._dirty = True
             return
 
         payload = {
+            'all_time_bot_score': int(self.all_time_bot_score),
+            'all_time_bot_name': self.all_time_bot_name,
+            'all_time_human_score': int(self.all_time_human_score),
+            'all_time_human_name': self.all_time_human_name,
             'high_score': int(self.high_score),
             'highest_tile': int(self.highest_tile),
             'games_played': int(self.games_played),
@@ -50,44 +93,56 @@ class GameStats:
 
         dir_name = os.path.dirname(STATS_FILE)
         try:
-            # 1. Atomic write to temporary file with flush & fsync
             fd, tmp_path = tempfile.mkstemp(prefix='stats_', suffix='.tmp', dir=dir_name)
             with os.fdopen(fd, 'w') as f:
                 json.dump(payload, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
 
-            # 2. Preserve backup of existing valid file
             if os.path.exists(STATS_FILE):
                 try:
                     with open(STATS_FILE, 'r') as sf:
-                        json.load(sf)  # Only backup if valid JSON
+                        json.load(sf)
                     with open(STATS_FILE, 'r') as sf, open(BACKUP_FILE, 'w') as bf:
                         bf.write(sf.read())
                 except Exception:
                     pass
 
-            # 3. Atomic replacement
             os.replace(tmp_path, STATS_FILE)
             self._last_save_time = now
             self._dirty = False
         except Exception:
             pass
 
-    def update(self, current_score, max_tile):
-        """Updates best records whenever current game surpasses previous all-time highs."""
+    def update(self, current_score, max_tile, used_bot, player_name=None):
+        """Updates score across appropriate session and all-time categories."""
         changed = False
-        if current_score > self.high_score:
-            self.high_score = current_score
-            changed = True
+
+        if used_bot:
+            if current_score > self.session_bot_score:
+                self.session_bot_score = current_score
+            if current_score > self.all_time_bot_score:
+                self.all_time_bot_score = current_score
+                if player_name:
+                    self.all_time_bot_name = sanitize_name(player_name, "Bot Master")
+                changed = True
+        else:
+            if current_score > self.session_human_score:
+                self.session_human_score = current_score
+            if current_score > self.all_time_human_score:
+                self.all_time_human_score = current_score
+                if player_name:
+                    self.all_time_human_name = sanitize_name(player_name, "Champion")
+                changed = True
+
         if max_tile > self.highest_tile:
             self.highest_tile = max_tile
             changed = True
+
         if changed:
             self.save(force=False)
 
     def flush(self):
-        """Flushes any pending unsaved stats immediately."""
         if self._dirty:
             self.save(force=True)
 

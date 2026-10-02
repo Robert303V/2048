@@ -90,9 +90,8 @@ class GameGUI:
         sub_surf = FONT_TINY.render("EXPECTIMAX BOT", True, th['sub_color'])
         self.screen.blit(sub_surf, (self.grid_x + 4, 60))
 
-        # Update high score in stats only when record is beaten
-        if self.game.score > self.stats.high_score or self.game.max_tile > self.stats.highest_tile:
-            self.stats.update(self.game.score, self.game.max_tile)
+        # Update high score in stats across human and bot categories
+        self.stats.update(self.game.score, self.game.max_tile, self.game.used_bot)
 
         # Score & Best Boxes
         box_w = 95

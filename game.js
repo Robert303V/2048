@@ -1,13 +1,45 @@
 // 2048 Game Engine for Web Deployment
-// Manages board state, moves, undo history, transitions, and permanent high score
+// Features 4 High Score Categories, Bot Usage Tracking, and Sanitized Global Records
+
+function sanitizePlayerName(input, defaultName = 'Player') {
+    if (typeof input !== 'string') return defaultName;
+    // 1. Remove all control characters, null bytes, and unicode direction overrides
+    let clean = input.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028-\u202E\uFEFF]/g, '');
+    // 2. Strictly whitelist alphanumeric, spaces, underscores, and hyphens only (blocks <, >, ', ", /, etc.)
+    clean = clean.replace(/[^a-zA-Z0-9 _-]/g, '');
+    // 3. Collapse multiple whitespace and trim
+    clean = clean.replace(/\s+/g, ' ').trim();
+    // 4. Strict length limit (max 16 characters)
+    clean = clean.substring(0, 16);
+    return clean.length > 0 ? clean : defaultName;
+}
+
+const GLOBAL_KV_BUCKET = '2048_master_v1_records';
+const GLOBAL_API_BASE = `https://kvdb.io/`;
 
 class GameEngine {
     constructor() {
         this.size = 4;
         this.history = [];
-        this.highScore = parseInt(localStorage.getItem('2048_high_score') || '61356', 10);
+
+        // 1. Session Bests (Initialized to 0 per session)
+        this.sessionHumanBest = 0;
+        this.sessionBotBest = 0;
+
+        // 2. All-Time Global Bests (Persisted locally & synced globally)
+        this.allTimeHumanBest = parseInt(localStorage.getItem('2048_alltime_human_score') || '18440', 10);
+        this.allTimeHumanName = sanitizePlayerName(localStorage.getItem('2048_alltime_human_name') || 'Grandmaster', 'Grandmaster');
+
+        this.allTimeBotBest = parseInt(localStorage.getItem('2048_alltime_bot_score') || '61356', 10);
+        this.allTimeBotName = sanitizePlayerName(localStorage.getItem('2048_alltime_bot_name') || 'Expectimax Bot', 'Expectimax Bot');
+
         this.gamesPlayed = parseInt(localStorage.getItem('2048_games_played') || '13', 10);
+
+        this.usedBotInGame = false;
+        this.recordPromptShownForCurrentGame = false;
+
         this.reset(false);
+        this.syncGlobalScores();
     }
 
     reset(incrementGames = true) {
@@ -24,6 +56,8 @@ class GameEngine {
         this.history = [];
         this.milestones = new Set();
         this.justMilestone = null;
+        this.usedBotInGame = false;
+        this.recordPromptShownForCurrentGame = false;
 
         if (incrementGames) {
             this.gamesPlayed++;
@@ -32,6 +66,10 @@ class GameEngine {
 
         this.addNewTile();
         this.addNewTile();
+    }
+
+    markBotUsed() {
+        this.usedBotInGame = true;
     }
 
     getEmptyCells() {
@@ -142,8 +180,8 @@ class GameEngine {
         const originalMoves = this.moves;
         const originalLastMove = this.lastMove;
         const originalMilestones = new Set(this.milestones);
+        const originalUsedBot = this.usedBotInGame;
 
-        // Apply slide & merge to a line
         const slideLine = (line) => {
             const nonZero = line.filter(v => v !== 0);
             const res = [];
@@ -230,7 +268,8 @@ class GameEngine {
             score: originalScore,
             moves: originalMoves,
             lastMove: originalLastMove,
-            milestones: originalMilestones
+            milestones: originalMilestones,
+            usedBot: originalUsedBot
         });
         if (this.history.length > 60) this.history.shift();
 
@@ -239,10 +278,15 @@ class GameEngine {
         this.moves++;
         this.lastMove = direction;
 
-        // Check and persist permanent high score
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            localStorage.setItem('2048_high_score', this.highScore);
+        // Update Session Bests
+        if (this.usedBotInGame) {
+            if (this.score > this.sessionBotBest) {
+                this.sessionBotBest = this.score;
+            }
+        } else {
+            if (this.score > this.sessionHumanBest) {
+                this.sessionHumanBest = this.score;
+            }
         }
 
         const spawned = this.addNewTile();
@@ -261,13 +305,102 @@ class GameEngine {
             this.gameOver = true;
         }
 
+        // Check if All-Time Record was broken
+        let recordBreak = null;
+        if (!this.recordPromptShownForCurrentGame) {
+            if (this.usedBotInGame && this.score > this.allTimeBotBest) {
+                recordBreak = {
+                    type: 'bot',
+                    score: this.score,
+                    prevBest: this.allTimeBotBest,
+                    prevName: this.allTimeBotName
+                };
+            } else if (!this.usedBotInGame && this.score > this.allTimeHumanBest) {
+                recordBreak = {
+                    type: 'human',
+                    score: this.score,
+                    prevBest: this.allTimeHumanBest,
+                    prevName: this.allTimeHumanName
+                };
+            }
+        }
+
         return {
             moved: true,
             transitions,
             spawn: spawned,
             highestMerged,
-            justMilestone: this.justMilestone
+            justMilestone: this.justMilestone,
+            recordBreak
         };
+    }
+
+    saveAllTimeRecord(type, rawName) {
+        const sanitizedName = sanitizePlayerName(rawName, type === 'bot' ? 'Bot Master' : 'Champion');
+        if (type === 'bot') {
+            this.allTimeBotBest = this.score;
+            this.allTimeBotName = sanitizedName;
+            localStorage.setItem('2048_alltime_bot_score', this.allTimeBotBest);
+            localStorage.setItem('2048_alltime_bot_name', this.allTimeBotName);
+        } else {
+            this.allTimeHumanBest = this.score;
+            this.allTimeHumanName = sanitizedName;
+            localStorage.setItem('2048_alltime_human_score', this.allTimeHumanBest);
+            localStorage.setItem('2048_alltime_human_name', this.allTimeHumanName);
+        }
+        this.recordPromptShownForCurrentGame = true;
+
+        // Async Cloud Sync
+        this.pushGlobalRecord(type, this.score, sanitizedName);
+    }
+
+    async pushGlobalRecord(type, score, name) {
+        try {
+            const key = type === 'bot' ? 'record_bot_v1' : 'record_human_v1';
+            const payload = JSON.stringify({ score, name, updated: Date.now() });
+            // Free public key-value store write
+            await fetch(`${GLOBAL_API_BASE}${GLOBAL_KV_BUCKET}/${key}`, {
+                method: 'PUT',
+                body: payload,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } catch (e) {
+            // Silently fall back to local storage if network is offline
+        }
+    }
+
+    async syncGlobalScores() {
+        try {
+            // Fetch human record
+            const resHuman = await fetch(`${GLOBAL_API_BASE}${GLOBAL_KV_BUCKET}/record_human_v1`);
+            if (resHuman.ok) {
+                const data = await resHuman.json();
+                if (data && typeof data.score === 'number' && data.score > this.allTimeHumanBest) {
+                    this.allTimeHumanBest = data.score;
+                    this.allTimeHumanName = sanitizePlayerName(data.name, 'Grandmaster');
+                    localStorage.setItem('2048_alltime_human_score', this.allTimeHumanBest);
+                    localStorage.setItem('2048_alltime_human_name', this.allTimeHumanName);
+                }
+            }
+
+            // Fetch bot record
+            const resBot = await fetch(`${GLOBAL_API_BASE}${GLOBAL_KV_BUCKET}/record_bot_v1`);
+            if (resBot.ok) {
+                const data = await resBot.json();
+                if (data && typeof data.score === 'number' && data.score > this.allTimeBotBest) {
+                    this.allTimeBotBest = data.score;
+                    this.allTimeBotName = sanitizePlayerName(data.name, 'Expectimax Bot');
+                    localStorage.setItem('2048_alltime_bot_score', this.allTimeBotBest);
+                    localStorage.setItem('2048_alltime_bot_name', this.allTimeBotName);
+                }
+            }
+
+            if (typeof window !== 'undefined' && window.updateLeaderboardDisplay) {
+                window.updateLeaderboardDisplay();
+            }
+        } catch (e) {
+            // Offline or unavailable, localStorage maintains integrity
+        }
     }
 
     undo() {
@@ -278,6 +411,7 @@ class GameEngine {
         this.moves = prev.moves;
         this.lastMove = prev.lastMove;
         this.milestones = prev.milestones;
+        this.usedBotInGame = prev.usedBot;
         this.gameOver = false;
         this.justMilestone = null;
         return true;
@@ -306,3 +440,4 @@ class GameEngine {
 }
 
 window.GameEngine = GameEngine;
+window.sanitizePlayerName = sanitizePlayerName;

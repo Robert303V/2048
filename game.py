@@ -89,8 +89,12 @@ class GameBoard:
         self.highest_tile_merged = 0
         self.last_transitions = []
         self.last_spawn = None
+        self.used_bot = False
         self.add_new_tile()
         self.add_new_tile()
+
+    def mark_bot_used(self):
+        self.used_bot = True
 
     def add_new_tile(self):
         empty_cells = self.get_empty_cells()
@@ -184,7 +188,7 @@ class GameBoard:
 
         if not np.array_equal(original_grid, self.grid):
             # Save history for undo
-            self.history.append((original_grid, original_score, original_moves, original_last_move, original_milestones))
+            self.history.append((original_grid, original_score, original_moves, original_last_move, original_milestones, self.used_bot))
             if len(self.history) > 60:
                 self.history.pop(0)
 
@@ -214,12 +218,13 @@ class GameBoard:
         """Restores the previous board state, score, and moves."""
         if not self.history:
             return False
-        prev_grid, prev_score, prev_moves, prev_last_move, prev_milestones = self.history.pop()
+        prev_grid, prev_score, prev_moves, prev_last_move, prev_milestones, prev_used_bot = self.history.pop()
         self.grid = prev_grid
         self.score = prev_score
         self.moves = prev_moves
         self.last_move = prev_last_move
         self.milestones_reached = prev_milestones
+        self.used_bot = prev_used_bot
         self.game_over = False
         self.just_unlocked_milestone = None
         self.highest_tile_merged = 0

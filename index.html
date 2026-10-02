@@ -21,10 +21,47 @@
                 </div>
                 <div class="score-box">
                     <div class="score-lbl">BEST</div>
-                    <div class="score-val" id="best-display">61356</div>
+                    <div class="score-val" id="best-display">61,356</div>
                 </div>
             </div>
         </header>
+
+        <!-- 4-Category Leaderboards Card -->
+        <section class="leaderboard-card">
+            <div class="lb-section">
+                <div class="lb-header">
+                    <span class="lb-title">🏆 ALL-TIME RECORDS (GLOBAL)</span>
+                    <span class="lb-status" id="lb-sync-status">● Live</span>
+                </div>
+                <div class="lb-grid">
+                    <div class="lb-item">
+                        <span class="lb-badge human-badge">👤 HUMAN</span>
+                        <span class="lb-name" id="alltime-human-name">Grandmaster</span>
+                        <span class="lb-score" id="alltime-human-score">18,440</span>
+                    </div>
+                    <div class="lb-item">
+                        <span class="lb-badge bot-badge">🤖 BOT</span>
+                        <span class="lb-name" id="alltime-bot-name">Expectimax Bot</span>
+                        <span class="lb-score" id="alltime-bot-score">61,356</span>
+                    </div>
+                </div>
+            </div>
+            <div class="lb-section session-section">
+                <div class="lb-header">
+                    <span class="lb-title">⏱️ THIS SESSION</span>
+                </div>
+                <div class="lb-grid">
+                    <div class="lb-item session-item">
+                        <span class="lb-tag">👤 Human Best:</span>
+                        <span class="lb-val" id="session-human-score">0</span>
+                    </div>
+                    <div class="lb-item session-item">
+                        <span class="lb-tag">🤖 Bot Best:</span>
+                        <span class="lb-val" id="session-bot-score">0</span>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <!-- Top Action Buttons -->
         <div class="controls-bar">
@@ -82,11 +119,28 @@
                 <button class="footer-btn" id="btn-theme">Theme: Classic</button>
                 <button class="footer-btn" id="btn-sound">Sound: ON</button>
             </div>
-            <div class="games-counter" id="games-counter">Games: 13</div>
+            <div class="run-mode-tag" id="run-mode-tag">👤 Pure Human</div>
         </div>
 
         <div class="shortcuts-legend">
             Space: Bot &bull; N: Step &bull; U: Undo &bull; S: Speed &bull; T: Theme &bull; M: Sound
+        </div>
+    </div>
+
+    <!-- New All-Time Record Modal (Protected against XSS & Layout Breaks) -->
+    <div class="modal-overlay" id="record-modal">
+        <div class="modal-content">
+            <div class="modal-icon">🏆</div>
+            <h2 class="modal-title">NEW ALL-TIME RECORD!</h2>
+            <div class="modal-category" id="modal-category">👤 Human-Only Category</div>
+            <div class="modal-score" id="modal-score">0</div>
+            <p class="modal-instruction">Enter your name for the global high scores board:</p>
+            <div class="modal-input-group">
+                <input type="text" class="modal-input" id="player-name-input" maxlength="16" placeholder="Your Name" autocomplete="off" spellcheck="false">
+                <button class="btn btn-save-record" id="btn-save-record">Save</button>
+            </div>
+            <button class="btn-skip-record" id="btn-skip-record">Skip (Anonymous)</button>
+            <div class="modal-security-note">Alphanumeric, spaces, underscores, and hyphens only (max 16 chars).</div>
         </div>
     </div>
 
@@ -110,6 +164,7 @@
         let isDarkTheme = localStorage.getItem('2048_dark_theme') === 'true';
         if (isDarkTheme) document.body.classList.add('dark-theme');
 
+        // DOM elements
         const tileContainer = document.getElementById('tile-container');
         const scoreDisplay = document.getElementById('score-display');
         const bestDisplay = document.getElementById('best-display');
@@ -117,7 +172,7 @@
         const statMaxTile = document.getElementById('stat-maxtile');
         const statEmpty = document.getElementById('stat-empty');
         const statLastMove = document.getElementById('stat-lastmove');
-        const gamesCounter = document.getElementById('games-counter');
+        const runModeTag = document.getElementById('run-mode-tag');
         const btnBot = document.getElementById('btn-bot');
         const btnTheme = document.getElementById('btn-theme');
         const btnSound = document.getElementById('btn-sound');
@@ -126,22 +181,72 @@
         const gameOverOverlay = document.getElementById('game-over-overlay');
         const gameOverDesc = document.getElementById('game-over-desc');
 
+        // Leaderboard DOM elements
+        const alltimeHumanName = document.getElementById('alltime-human-name');
+        const alltimeHumanScore = document.getElementById('alltime-human-score');
+        const alltimeBotName = document.getElementById('alltime-bot-name');
+        const alltimeBotScore = document.getElementById('alltime-bot-score');
+        const sessionHumanScore = document.getElementById('session-human-score');
+        const sessionBotScore = document.getElementById('session-bot-score');
+
+        // Record Modal DOM elements
+        const recordModal = document.getElementById('record-modal');
+        const modalCategory = document.getElementById('modal-category');
+        const modalScore = document.getElementById('modal-score');
+        const playerNameInput = document.getElementById('player-name-input');
+        const btnSaveRecord = document.getElementById('btn-save-record');
+        const btnSkipRecord = document.getElementById('btn-skip-record');
+
+        let pendingRecordBreak = null;
+
+        // Security: Real-time input filtering to block any non-whitelisted characters
+        playerNameInput.addEventListener('input', () => {
+            playerNameInput.value = playerNameInput.value.replace(/[^a-zA-Z0-9 _-]/g, '');
+        });
+
+        function updateLeaderboardDisplay() {
+            // Strictly set .textContent for absolute XSS security
+            alltimeHumanName.textContent = game.allTimeHumanName;
+            alltimeHumanScore.textContent = game.allTimeHumanBest.toLocaleString();
+            alltimeBotName.textContent = game.allTimeBotName;
+            alltimeBotScore.textContent = game.allTimeBotBest.toLocaleString();
+
+            sessionHumanScore.textContent = game.sessionHumanBest.toLocaleString();
+            sessionBotScore.textContent = game.sessionBotBest.toLocaleString();
+
+            // Best display in header shows the highest overall all-time score
+            const overallBest = Math.max(game.allTimeBotBest, game.allTimeHumanBest);
+            bestDisplay.textContent = overallBest.toLocaleString();
+        }
+        window.updateLeaderboardDisplay = updateLeaderboardDisplay;
+
         function updateUI(justSpawned = null, justMerged = false) {
             scoreDisplay.textContent = game.score.toLocaleString();
-            bestDisplay.textContent = game.highScore.toLocaleString();
             statMoves.textContent = game.moves.toLocaleString();
             statMaxTile.textContent = game.getMaxTile().toLocaleString();
             statEmpty.textContent = `${game.getEmptyCells().length}/16`;
             statLastMove.textContent = game.lastMove ? game.lastMove.toUpperCase() : '-';
-            gamesCounter.textContent = `Games: ${game.gamesPlayed}`;
             btnSound.textContent = window.soundManager.muted ? 'Sound: OFF' : 'Sound: ON';
             btnTheme.textContent = isDarkTheme ? 'Theme: Dark' : 'Theme: Classic';
+
+            // Update Run Mode Tag
+            if (game.usedBotInGame) {
+                runModeTag.textContent = '🤖 Bot Assisted';
+                runModeTag.style.color = 'var(--btn-bot-active)';
+            } else {
+                runModeTag.textContent = '👤 Pure Human';
+                runModeTag.style.color = 'var(--sub-color)';
+            }
+
+            // Update Leaderboard numbers
+            updateLeaderboardDisplay();
 
             // Render Tiles
             renderTiles(justSpawned, justMerged);
 
             if (game.gameOver) {
-                gameOverDesc.textContent = `Final Score: ${game.score.toLocaleString()} | Max Tile: ${game.getMaxTile().toLocaleString()}`;
+                const modeLabel = game.usedBotInGame ? 'Bot Assisted' : 'Pure Human';
+                gameOverDesc.textContent = `Score: ${game.score.toLocaleString()} | Max: ${game.getMaxTile().toLocaleString()} (${modeLabel})`;
                 gameOverOverlay.classList.add('active');
                 stopBot();
             } else {
@@ -189,6 +294,40 @@
             }, 3000);
         }
 
+        function openRecordModal(record) {
+            stopBot();
+            pendingRecordBreak = record;
+            modalCategory.textContent = record.type === 'bot' ? '🤖 Bot-Assisted Category' : '👤 Pure Human Category';
+            modalScore.textContent = record.score.toLocaleString();
+            playerNameInput.value = '';
+            recordModal.classList.add('active');
+            window.soundManager.playMilestone();
+            setTimeout(() => playerNameInput.focus(), 150);
+        }
+
+        function submitRecord(rawName) {
+            if (!pendingRecordBreak) return;
+            game.saveAllTimeRecord(pendingRecordBreak.type, rawName);
+            recordModal.classList.remove('active');
+            pendingRecordBreak = null;
+            updateLeaderboardDisplay();
+        }
+
+        btnSaveRecord.addEventListener('click', () => {
+            submitRecord(playerNameInput.value);
+        });
+
+        btnSkipRecord.addEventListener('click', () => {
+            submitRecord('Anonymous');
+        });
+
+        playerNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitRecord(playerNameInput.value);
+            }
+        });
+
         function handleMove(direction) {
             const res = game.move(direction);
             if (res.moved) {
@@ -202,6 +341,10 @@
 
                 updateUI(res.spawn, res.highestMerged > 0);
 
+                if (res.recordBreak) {
+                    openRecordModal(res.recordBreak);
+                }
+
                 if (game.gameOver) {
                     window.soundManager.playGameOver();
                 }
@@ -212,6 +355,7 @@
 
         function stepBot() {
             if (game.gameOver) return;
+            game.markBotUsed();
             const bestMove = window.ExpectimaxBot.getBestMove(game.grid);
             if (bestMove) {
                 handleMove(bestMove);
@@ -223,6 +367,7 @@
                 stopBot();
                 return;
             }
+            game.markBotUsed();
             const bestMove = window.ExpectimaxBot.getBestMove(game.grid);
             if (bestMove) {
                 handleMove(bestMove);
@@ -292,6 +437,14 @@
 
         // Keyboard Controls
         window.addEventListener('keydown', (e) => {
+            // Ignore game keys if the record modal is open and user is typing their name
+            if (recordModal.classList.contains('active')) {
+                if (e.key === 'Escape') {
+                    submitRecord('Anonymous');
+                }
+                return;
+            }
+
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
                 e.preventDefault();
             }
@@ -331,7 +484,7 @@
         }, { passive: true });
 
         boardWrapper.addEventListener('touchend', (e) => {
-            if (isBotRunning || e.changedTouches.length === 0) return;
+            if (isBotRunning || e.changedTouches.length === 0 || recordModal.classList.contains('active')) return;
             const dx = e.changedTouches[0].clientX - touchStartX;
             const dy = e.changedTouches[0].clientY - touchStartY;
             const absX = Math.abs(dx);

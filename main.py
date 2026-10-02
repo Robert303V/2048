@@ -64,6 +64,7 @@ def main():
                     # Single step with Bot
                     if not game.is_game_over():
                         is_bot_running = False
+                        game.mark_bot_used()
                         best_move = agent.get_best_move(game.get_state())
                         if best_move:
                             execute_move(game, gui, best_move, animate=True, duration=0.095)
@@ -91,6 +92,7 @@ def main():
                     # Single step with Bot
                     if not game.is_game_over():
                         is_bot_running = False
+                        game.mark_bot_used()
                         best_move = agent.get_best_move(game.get_state())
                         if best_move:
                             execute_move(game, gui, best_move, animate=True, duration=0.095)
@@ -124,6 +126,7 @@ def main():
         # --- Bot Move Execution ---
         if is_bot_running and not game.is_game_over():
             if current_time - last_bot_move_time >= speed_delay:
+                game.mark_bot_used()
                 best_move = agent.get_best_move(game.get_state())
                 if best_move:
                     # In Normal mode (delay = 70ms), animate with a snappy 40ms slide within the delay
