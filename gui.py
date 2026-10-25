@@ -395,8 +395,8 @@ class GameGUI:
         self.screen.blit(games_surf, games_surf.get_rect(right=self.grid_x + GRID_WIDTH, centery=self.sound_btn_rect.centery))
 
         # Footer Row 2 & 3: Complete Keyboard & Mouse Controls Legend
-        hint_line1 = "Arrows: Move  •  Space: Run/Pause Bot  •  N: Step (1 Move)  •  U: Undo"
-        hint_line2 = "S: Speed (Normal/Fast/Turbo)  •  R: Reset  •  T: Theme  •  M: Sound"
+        hint_line1 = "WASD / Arrows: Move  •  Space: Run/Pause Bot  •  N: Step  •  U: Undo"
+        hint_line2 = "F: Speed (Normal/Fast/Turbo)  •  R: Reset  •  T: Theme  •  M: Sound"
         h1_surf = FONT_MICRO.render(hint_line1, True, th['sub_color'])
         h2_surf = FONT_MICRO.render(hint_line2, True, th['sub_color'])
         self.screen.blit(h1_surf, h1_surf.get_rect(center=(WIDTH // 2, 712)))

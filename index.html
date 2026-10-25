@@ -127,7 +127,7 @@
             <div class="controls-legend-grid">
                 <div class="control-item">
                     <span class="control-action">Move Tiles</span>
-                    <span class="control-keys"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> / Swipe</span>
+                    <span class="control-keys"><kbd>WASD</kbd> / <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> / Swipe</span>
                 </div>
                 <div class="control-item">
                     <span class="control-action">Run / Pause Bot</span>
@@ -143,7 +143,7 @@
                 </div>
                 <div class="control-item">
                     <span class="control-action">Cycle Bot Speed</span>
-                    <span class="control-keys"><kbd>S</kbd> (Normal/Fast/Turbo)</span>
+                    <span class="control-keys"><kbd>F</kbd> (Normal/Fast/Turbo)</span>
                 </div>
                 <div class="control-item">
                     <span class="control-action">Reset Game</span>
@@ -558,7 +558,7 @@
                 stepBot();
             } else if (e.key === 'u' || e.key === 'U') {
                 undoMove();
-            } else if (e.key === 's' || e.key === 'S') {
+            } else if (e.key === 'f' || e.key === 'F') {
                 cycleSpeed();
             } else if (e.key === 't' || e.key === 'T') {
                 toggleTheme();
@@ -567,10 +567,10 @@
             } else if (e.key === 'r' || e.key === 'R') {
                 resetGame();
             } else if (!isBotRunning) {
-                if (e.key === 'ArrowLeft') handleMove('left');
-                else if (e.key === 'ArrowRight') handleMove('right');
-                else if (e.key === 'ArrowUp') handleMove('up');
-                else if (e.key === 'ArrowDown') handleMove('down');
+                if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') handleMove('left');
+                else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') handleMove('right');
+                else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') handleMove('up');
+                else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') handleMove('down');
             }
         });
 

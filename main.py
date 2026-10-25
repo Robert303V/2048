@@ -119,7 +119,7 @@ def main():
                     is_bot_running = False
                     gui.finish_animation()
                     game.undo()
-                elif event.key == pygame.K_s:
+                elif event.key == pygame.K_f:
                     speed_index = (speed_index + 1) % len(SPEEDS)
                 elif event.key == pygame.K_t:
                     gui.toggle_theme()
@@ -131,15 +131,15 @@ def main():
                     gui.stats.increment_games()
                     is_bot_running = False
 
-                # Manual player moves only when Bot is paused
+                # Manual player moves (Arrow keys or WASD) only when Bot is paused
                 if not is_bot_running and not game.is_game_over():
-                    if event.key == pygame.K_UP:
+                    if event.key in (pygame.K_UP, pygame.K_w):
                         execute_move(game, gui, 'up', animate=True, duration=0.095)
-                    elif event.key == pygame.K_DOWN:
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
                         execute_move(game, gui, 'down', animate=True, duration=0.095)
-                    elif event.key == pygame.K_LEFT:
+                    elif event.key in (pygame.K_LEFT, pygame.K_a):
                         execute_move(game, gui, 'left', animate=True, duration=0.095)
-                    elif event.key == pygame.K_RIGHT:
+                    elif event.key in (pygame.K_RIGHT, pygame.K_d):
                         execute_move(game, gui, 'right', animate=True, duration=0.095)
 
         # Pause bot automatically if record modal pops up
