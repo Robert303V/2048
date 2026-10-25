@@ -394,10 +394,13 @@ class GameGUI:
         games_surf = FONT_TINY.render(games_txt, True, th['sub_color'])
         self.screen.blit(games_surf, games_surf.get_rect(right=self.grid_x + GRID_WIDTH, centery=self.sound_btn_rect.centery))
 
-        # Footer Row 2: Dedicated Keyboard Shortcuts Legend (Zero overlap!)
-        hint_txt = "Space: Bot  •  N: Step  •  U: Undo  •  S: Speed  •  T: Theme  •  M: Sound"
-        hint_surf = FONT_TINY.render(hint_txt, True, th['sub_color'])
-        self.screen.blit(hint_surf, hint_surf.get_rect(center=(WIDTH // 2, 718)))
+        # Footer Row 2 & 3: Complete Keyboard & Mouse Controls Legend
+        hint_line1 = "Arrows: Move  •  Space: Run/Pause Bot  •  N: Step (1 Move)  •  U: Undo"
+        hint_line2 = "S: Speed (Normal/Fast/Turbo)  •  R: Reset  •  T: Theme  •  M: Sound"
+        h1_surf = FONT_MICRO.render(hint_line1, True, th['sub_color'])
+        h2_surf = FONT_MICRO.render(hint_line2, True, th['sub_color'])
+        self.screen.blit(h1_surf, h1_surf.get_rect(center=(WIDTH // 2, 712)))
+        self.screen.blit(h2_surf, h2_surf.get_rect(center=(WIDTH // 2, 730)))
 
     def draw_milestone_banner(self):
         if self.banner_text and time.time() < self.banner_end_time:

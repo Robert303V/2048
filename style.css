@@ -438,13 +438,66 @@ body.dark-theme .session-section {
     border-radius: 5px;
 }
 
-.shortcuts-legend {
-    text-align: center;
+.controls-legend-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    margin-top: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.controls-legend-title {
     font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: var(--title-color);
+}
+
+.controls-legend-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 10px;
+}
+
+.control-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+body.dark-theme .control-item {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.control-action {
+    font-weight: 700;
+    color: var(--title-color);
+}
+
+.control-keys {
     font-weight: 600;
     color: var(--sub-color);
-    margin-top: 4px;
-    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.control-keys kbd {
+    background: var(--grid-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--title-color);
 }
 
 /* Milestone Popup Banner */
