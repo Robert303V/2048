@@ -114,14 +114,25 @@ class GameStats:
         except Exception:
             pass
 
-    def update(self, current_score, max_tile, used_bot, player_name=None):
-        """Updates score across appropriate session and all-time categories."""
+    def update(self, current_score, max_tile, used_bot, record_prompt_shown=True, player_name=None):
+        """
+        Updates score across appropriate session and all-time categories.
+        Returns a record_break dict if a new All-Time Record was just crossed and record_prompt_shown is False.
+        """
         changed = False
+        record_break = None
 
         if used_bot:
             if current_score > self.session_bot_score:
                 self.session_bot_score = current_score
             if current_score > self.all_time_bot_score:
+                if not record_prompt_shown:
+                    record_break = {
+                        'type': 'bot',
+                        'score': current_score,
+                        'prev_best': self.all_time_bot_score,
+                        'prev_name': self.all_time_bot_name,
+                    }
                 self.all_time_bot_score = current_score
                 if player_name:
                     self.all_time_bot_name = sanitize_name(player_name, "Bot Master")
@@ -130,6 +141,13 @@ class GameStats:
             if current_score > self.session_human_score:
                 self.session_human_score = current_score
             if current_score > self.all_time_human_score:
+                if not record_prompt_shown:
+                    record_break = {
+                        'type': 'human',
+                        'score': current_score,
+                        'prev_best': self.all_time_human_score,
+                        'prev_name': self.all_time_human_name,
+                    }
                 self.all_time_human_score = current_score
                 if player_name:
                     self.all_time_human_name = sanitize_name(player_name, "Champion")
@@ -140,7 +158,17 @@ class GameStats:
             changed = True
 
         if changed:
-            self.save(force=False)
+            self.save(force=bool(record_break))
+
+        return record_break
+
+    def set_record_holder(self, record_type, raw_name):
+        """Sets and persists the sanitized player name for an all-time record."""
+        if record_type == 'bot':
+            self.all_time_bot_name = sanitize_name(raw_name, "Bot Master")
+        else:
+            self.all_time_human_name = sanitize_name(raw_name, "Champion")
+        self.save(force=True)
 
     def flush(self):
         if self._dirty:

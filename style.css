@@ -322,8 +322,8 @@ body.dark-theme .session-section {
     justify-content: center;
     font-weight: 800;
     font-size: 32px;
-    transition: transform 90ms cubic-bezier(0.25, 1, 0.5, 1);
-    will-change: transform;
+    transition: left 75ms cubic-bezier(0.25, 1, 0.5, 1), top 75ms cubic-bezier(0.25, 1, 0.5, 1);
+    will-change: left, top;
 }
 
 .tile-inner {

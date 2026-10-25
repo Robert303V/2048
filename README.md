@@ -42,7 +42,7 @@ The automated solver uses a calibrated **64-bit Bitboard Expectimax Tree Search*
 
 ```bash
 # Clone the repository
-git clone https://github.com/<your-username>/2048.git
+git clone https://github.com/Robert303V/2048.git
 cd 2048
 
 # Setup virtual environment and dependencies
@@ -63,7 +63,7 @@ python main.py
    git init
    git add .
    git commit -m "Initial commit of 2048 Master Edition & Web Deployment"
-   git remote add origin https://github.com/<your-username>/2048.git
+   git remote add origin https://github.com/Robert303V/2048.git
    git push -u origin main
    ```
 2. In your GitHub repository:
@@ -71,5 +71,5 @@ python main.py
    - Under **Build and deployment** > **Source**, choose **GitHub Actions** (or **Deploy from a branch: main / root**).
 3. Your game is now live at:
    ```
-   https://<your-username>.github.io/2048/
+   https://Robert303V.github.io/2048/
    ```

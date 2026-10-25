@@ -12,15 +12,26 @@ SPEEDS = [
 
 
 def execute_move(game, gui, direction, animate=True, duration=0.095):
-    """Executes a move, triggers smooth slide animation, plays sound, and checks milestones."""
+    """Executes a move, triggers smooth slide animation, plays sound, checks milestones, and updates records."""
     if gui.is_animating():
         gui.finish_animation()
 
     if game.move(direction):
+        gui.stats.increment_moves(1)
+        record_break = gui.stats.update(
+            game.score,
+            game.max_tile,
+            game.used_bot,
+            record_prompt_shown=game.record_prompt_shown,
+        )
+
         if animate and duration > 0 and game.last_transitions:
             gui.start_animation(game.last_transitions, game.last_spawn, duration=duration)
 
-        if game.just_unlocked_milestone:
+        if record_break:
+            game.record_prompt_shown = True
+            gui.open_record_modal(record_break['type'], record_break['score'])
+        elif game.just_unlocked_milestone:
             gui.trigger_milestone(game.just_unlocked_milestone)
         elif game.highest_tile_merged > 0:
             gui.sound.play_merge(game.highest_tile_merged)
@@ -54,6 +65,14 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
+            # --- Record Modal Active Input Routing ---
+            if gui.record_modal_active:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    gui.handle_modal_click(event.pos)
+                elif event.type == pygame.KEYDOWN:
+                    gui.handle_modal_key(event)
+                continue
 
             # --- Mouse Click Detection ---
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -123,8 +142,12 @@ def main():
                     elif event.key == pygame.K_RIGHT:
                         execute_move(game, gui, 'right', animate=True, duration=0.095)
 
+        # Pause bot automatically if record modal pops up
+        if gui.record_modal_active:
+            is_bot_running = False
+
         # --- Bot Move Execution ---
-        if is_bot_running and not game.is_game_over():
+        if is_bot_running and not game.is_game_over() and not gui.record_modal_active:
             if current_time - last_bot_move_time >= speed_delay:
                 game.mark_bot_used()
                 best_move = agent.get_best_move(game.get_state())
@@ -134,6 +157,8 @@ def main():
                     bot_animate = (speed_name == "Normal")
                     bot_duration = 0.040 if bot_animate else 0.0
                     execute_move(game, gui, best_move, animate=bot_animate, duration=bot_duration)
+                    if gui.record_modal_active:
+                        is_bot_running = False
                 else:
                     is_bot_running = False
                 last_bot_move_time = pygame.time.get_ticks()

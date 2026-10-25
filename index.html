@@ -220,7 +220,14 @@
         }
         window.updateLeaderboardDisplay = updateLeaderboardDisplay;
 
-        function updateUI(justSpawned = null, justMerged = false) {
+        let slideAnimationTimer = null;
+
+        function setTilePosition(el, r, c) {
+            el.style.left = `calc(${c * 25}% + ${c * 2.25}px)`;
+            el.style.top = `calc(${r * 25}% + ${r * 2.25}px)`;
+        }
+
+        function updateUI(justSpawned = null, mergedCoords = null, transitions = null, animateSlide = false) {
             scoreDisplay.textContent = game.score.toLocaleString();
             statMoves.textContent = game.moves.toLocaleString();
             statMaxTile.textContent = game.getMaxTile().toLocaleString();
@@ -241,8 +248,8 @@
             // Update Leaderboard numbers
             updateLeaderboardDisplay();
 
-            // Render Tiles
-            renderTiles(justSpawned, justMerged);
+            // Render Tiles (with smooth slide trajectory when active)
+            renderTiles(justSpawned, mergedCoords, transitions, animateSlide);
 
             if (game.gameOver) {
                 const modeLabel = game.usedBotInGame ? 'Bot Assisted' : 'Pure Human';
@@ -254,7 +261,7 @@
             }
         }
 
-        function renderTiles(justSpawned = null, justMerged = false) {
+        function renderStaticGrid(justSpawned = null, mergedCoords = null) {
             tileContainer.innerHTML = '';
             for (let r = 0; r < 4; r++) {
                 for (let c = 0; c < 4; c++) {
@@ -263,11 +270,7 @@
 
                     const tile = document.createElement('div');
                     tile.className = `tile tile-${val}`;
-                    
-                    const leftPct = (c * 25);
-                    const topPct = (r * 25);
-                    tile.style.left = `calc(${leftPct}% + ${c * 2.25}px)`;
-                    tile.style.top = `calc(${topPct}% + ${r * 2.25}px)`;
+                    setTilePosition(tile, r, c);
 
                     const inner = document.createElement('div');
                     inner.className = 'tile-inner';
@@ -275,7 +278,7 @@
 
                     if (justSpawned && justSpawned.r === r && justSpawned.c === c) {
                         tile.classList.add('tile-new');
-                    } else if (justMerged) {
+                    } else if (mergedCoords && mergedCoords.has(`${r},${c}`)) {
                         tile.classList.add('tile-merged');
                     }
 
@@ -283,6 +286,59 @@
                     tileContainer.appendChild(tile);
                 }
             }
+        }
+
+        function renderTiles(justSpawned = null, mergedCoords = null, transitions = null, animateSlide = false) {
+            if (slideAnimationTimer) {
+                clearTimeout(slideAnimationTimer);
+                slideAnimationTimer = null;
+            }
+
+            const hasMovingTiles = transitions && transitions.some(
+                t => t.from.r !== t.to.r || t.from.c !== t.to.c
+            );
+
+            if (!animateSlide || !hasMovingTiles) {
+                renderStaticGrid(justSpawned, mergedCoords);
+                return;
+            }
+
+            // 1. Place tiles at their pre-move 'from' coordinates (stationary first, sliding on top)
+            tileContainer.innerHTML = '';
+            const sortedTransitions = [...transitions].sort((a, b) => {
+                const aStatic = (a.from.r === a.to.r && a.from.c === a.to.c) ? 0 : 1;
+                const bStatic = (b.from.r === b.to.r && b.from.c === b.to.c) ? 0 : 1;
+                return aStatic - bStatic;
+            });
+
+            const domPairs = [];
+            for (const t of sortedTransitions) {
+                const tile = document.createElement('div');
+                tile.className = `tile tile-${t.val}`;
+                setTilePosition(tile, t.from.r, t.from.c);
+
+                const inner = document.createElement('div');
+                inner.className = 'tile-inner';
+                inner.textContent = t.val;
+
+                tile.appendChild(inner);
+                tileContainer.appendChild(tile);
+                domPairs.push({ el: tile, to: t.to });
+            }
+
+            // 2. Force layout reflow so browser commits initial positions before CSS transition
+            void tileContainer.offsetWidth;
+
+            // 3. Glide tiles smoothly to their 'to' target coordinates
+            for (const item of domPairs) {
+                setTilePosition(item.el, item.to.r, item.to.c);
+            }
+
+            // 4. Commit merged values and newly spawned tile once the 75ms slide completes
+            slideAnimationTimer = setTimeout(() => {
+                slideAnimationTimer = null;
+                renderStaticGrid(justSpawned, mergedCoords);
+            }, 75);
         }
 
         function triggerMilestone(val) {
@@ -328,7 +384,7 @@
             }
         });
 
-        function handleMove(direction) {
+        function handleMove(direction, animateSlide = true) {
             const res = game.move(direction);
             if (res.moved) {
                 if (res.justMilestone) {
@@ -339,7 +395,16 @@
                     window.soundManager.playSlide();
                 }
 
-                updateUI(res.spawn, res.highestMerged > 0);
+                const mergedCoords = new Set();
+                if (res.transitions) {
+                    for (const t of res.transitions) {
+                        if (t.merged) {
+                            mergedCoords.add(`${t.to.r},${t.to.c}`);
+                        }
+                    }
+                }
+
+                updateUI(res.spawn, mergedCoords, res.transitions, animateSlide);
 
                 if (res.recordBreak) {
                     openRecordModal(res.recordBreak);
@@ -358,7 +423,7 @@
             game.markBotUsed();
             const bestMove = window.ExpectimaxBot.getBestMove(game.grid);
             if (bestMove) {
-                handleMove(bestMove);
+                handleMove(bestMove, true);
             }
         }
 
@@ -370,8 +435,12 @@
             game.markBotUsed();
             const bestMove = window.ExpectimaxBot.getBestMove(game.grid);
             if (bestMove) {
-                handleMove(bestMove);
-                botTimer = setTimeout(runBotLoop, SPEEDS[speedIndex].delay);
+                // Animate slides in Normal speed; disable slide delay in Fast/Turbo for maximum throughput
+                const animateBotSlide = (SPEEDS[speedIndex].name === "Normal");
+                handleMove(bestMove, animateBotSlide);
+                if (isBotRunning && !game.gameOver) {
+                    botTimer = setTimeout(runBotLoop, SPEEDS[speedIndex].delay);
+                }
             } else {
                 stopBot();
             }

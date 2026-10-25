@@ -235,9 +235,7 @@ class ExpectimaxAgent:
     - Steep B=2.8 snake monotonicity + pairwise merge potential + cliff emergency penalty
     """
 
-    def __init__(self, state_shape=None, action_size=4):
-        self.state_shape = state_shape
-        self.action_size = action_size
+    def __init__(self):
         self.trans = {}  # Persistent transposition cache across turns
 
     def search(
@@ -349,12 +347,8 @@ class ExpectimaxAgent:
         return None
 
     def act(self, grid_or_state):
-        """Drop-in compatible method returning action index (0..3)."""
+        """Returns best action index (0..3)."""
         move_str = self.get_best_move(grid_or_state)
         if move_str is not None:
             return DIR_TO_INDEX[move_str]
         return 0
-
-
-# Alias for backward compatibility
-DQNAgent = ExpectimaxAgent

@@ -1,5 +1,6 @@
 import pygame
 import time
+import re
 from constants import *
 from stats import GameStats
 from sound import SoundManager
@@ -14,7 +15,9 @@ class GameGUI:
 
         # Center grid coordinates
         self.grid_x = (WIDTH - GRID_WIDTH) // 2
-        self.grid_y = 145
+        self.leaderboard_y = 72
+        self.leaderboard_h = 74
+        self.grid_y = 198
 
         # Theme and Services
         self.current_theme_name = 'Classic'
@@ -32,9 +35,17 @@ class GameGUI:
         self.anim_start_time = 0.0
         self.anim_end_time = 0.0
 
-        # Top Action Buttons (Row: y=88, h=36)
-        btn_y = 88
-        btn_h = 36
+        # New All-Time Record Modal State
+        self.record_modal_active = False
+        self.modal_record_type = 'human'
+        self.modal_record_score = 0
+        self.modal_input_text = ""
+        self.modal_save_rect = pygame.Rect(0, 0, 0, 0)
+        self.modal_skip_rect = pygame.Rect(0, 0, 0, 0)
+
+        # Top Action Buttons (Row: y=154, h=35)
+        btn_y = 154
+        btn_h = 35
         self.bot_btn_rect = pygame.Rect(self.grid_x, btn_y, 110, btn_h)
         self.ai_btn_rect = self.bot_btn_rect  # Backward compatibility alias
         self.step_btn_rect = pygame.Rect(self.grid_x + 118, btn_y, 65, btn_h)
@@ -42,11 +53,12 @@ class GameGUI:
         self.speed_btn_rect = pygame.Rect(self.grid_x + 264, btn_y, 75, btn_h)
         self.reset_btn_rect = pygame.Rect(self.grid_x + 347, btn_y, 53, btn_h)
 
-        # Footer Buttons Row (y=616, h=28) - cleanly separated from shortcuts hint
-        footer_btn_y = 616
+        # Footer Buttons Row (y=666, h=28) - cleanly separated from shortcuts hint
+        footer_btn_y = 666
         footer_btn_h = 28
         self.theme_btn_rect = pygame.Rect(self.grid_x, footer_btn_y, 96, footer_btn_h)
-        self.sound_btn_rect = pygame.Rect(self.grid_x + 104, footer_btn_y, 96, footer_btn_h)
+        self.sound_btn_rect = pygame.Rect(self.grid_x + 102, footer_btn_y, 88, footer_btn_h)
+        self.mode_tag_rect = pygame.Rect(self.grid_x + 196, footer_btn_y, 112, footer_btn_h)
 
     @property
     def theme(self):
@@ -59,6 +71,51 @@ class GameGUI:
         self.banner_text = f"🎉 {tile_value} Unlocked! Keep Going!"
         self.banner_end_time = time.time() + 3.0
         self.sound.play_milestone()
+
+    def open_record_modal(self, record_type, score):
+        """Opens the New All-Time Record modal overlay for player name entry."""
+        self.record_modal_active = True
+        self.modal_record_type = record_type
+        self.modal_record_score = score
+        self.modal_input_text = ""
+        self.sound.play_milestone()
+
+    def submit_record_modal(self, raw_name=None):
+        """Saves the sanitized player name for the new all-time record and closes the modal."""
+        if not self.record_modal_active:
+            return
+        name_to_save = self.modal_input_text if raw_name is None else raw_name
+        default_name = "Bot Master" if self.modal_record_type == 'bot' else "Champion"
+        final_name = name_to_save.strip() if name_to_save and name_to_save.strip() else default_name
+        self.stats.set_record_holder(self.modal_record_type, final_name)
+        self.record_modal_active = False
+        self.modal_input_text = ""
+
+    def handle_modal_key(self, event):
+        """Processes keyboard input while the New All-Time Record modal is open."""
+        if not self.record_modal_active:
+            return False
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.submit_record_modal(self.modal_input_text)
+        elif event.key == pygame.K_ESCAPE:
+            self.submit_record_modal("Anonymous")
+        elif event.key == pygame.K_BACKSPACE:
+            self.modal_input_text = self.modal_input_text[:-1]
+        else:
+            ch = event.unicode
+            if ch and len(self.modal_input_text) < 16 and re.match(r'^[a-zA-Z0-9 _-]$', ch):
+                self.modal_input_text += ch
+        return True
+
+    def handle_modal_click(self, pos):
+        """Processes mouse clicks while the New All-Time Record modal is open."""
+        if not self.record_modal_active:
+            return False
+        if self.modal_save_rect.collidepoint(pos):
+            self.submit_record_modal(self.modal_input_text)
+        elif self.modal_skip_rect.collidepoint(pos):
+            self.submit_record_modal("Anonymous")
+        return True
 
     def start_animation(self, transitions, spawn=None, duration=0.095):
         """Starts a silky smooth tile slide animation."""
@@ -85,18 +142,15 @@ class GameGUI:
         th = self.theme
         # Game Title & Subtitle
         title_surf = FONT_HUGE.render("2048", True, th['title_color'])
-        self.screen.blit(title_surf, (self.grid_x, 18))
+        self.screen.blit(title_surf, (self.grid_x, 12))
 
         sub_surf = FONT_TINY.render("EXPECTIMAX BOT", True, th['sub_color'])
-        self.screen.blit(sub_surf, (self.grid_x + 4, 60))
-
-        # Update high score in stats across human and bot categories
-        self.stats.update(self.game.score, self.game.max_tile, self.game.used_bot)
+        self.screen.blit(sub_surf, (self.grid_x + 3, 52))
 
         # Score & Best Boxes
         box_w = 95
         box_h = 50
-        box_y = 18
+        box_y = 14
 
         # 1. Current Score Box
         score_rect = pygame.Rect(WIDTH - self.grid_x - (box_w * 2 + 10), box_y, box_w, box_h)
@@ -104,7 +158,7 @@ class GameGUI:
         lbl_s = FONT_TINY.render("SCORE", True, th['header_text_lbl'])
         lbl_s_rect = lbl_s.get_rect(center=(score_rect.centerx, score_rect.top + 14))
         self.screen.blit(lbl_s, lbl_s_rect)
-        val_s = FONT_MEDIUM.render(str(self.game.score), True, th['header_text_val'])
+        val_s = FONT_MEDIUM.render(f"{self.game.score:,}", True, th['header_text_val'])
         val_s_rect = val_s.get_rect(center=(score_rect.centerx, score_rect.top + 34))
         self.screen.blit(val_s, val_s_rect)
 
@@ -114,9 +168,76 @@ class GameGUI:
         lbl_b = FONT_TINY.render("BEST", True, th['header_text_lbl'])
         lbl_b_rect = lbl_b.get_rect(center=(best_rect.centerx, best_rect.top + 14))
         self.screen.blit(lbl_b, lbl_b_rect)
-        val_b = FONT_MEDIUM.render(str(self.stats.high_score), True, th['header_text_val'])
+        val_b = FONT_MEDIUM.render(f"{self.stats.high_score:,}", True, th['header_text_val'])
         val_b_rect = val_b.get_rect(center=(best_rect.centerx, best_rect.top + 34))
         self.screen.blit(val_b, val_b_rect)
+
+    def draw_leaderboard_card(self):
+        """Renders the 4-Category Leaderboard Card (All-Time & Session for Human & Bot)."""
+        th = self.theme
+        card_rect = pygame.Rect(self.grid_x, self.leaderboard_y, GRID_WIDTH, self.leaderboard_h)
+        pygame.draw.rect(self.screen, th['card_bg'], card_rect, border_radius=8)
+        pygame.draw.rect(self.screen, th['card_border'], card_rect, width=1, border_radius=8)
+
+        # Top Section Header: All-Time Records
+        hdr_lbl = FONT_MICRO.render("ALL-TIME RECORDS", True, th['title_color'])
+        self.screen.blit(hdr_lbl, (card_rect.left + 10, card_rect.top + 6))
+
+        status_lbl = FONT_MICRO.render("● Saved", True, th['live_dot'])
+        self.screen.blit(status_lbl, status_lbl.get_rect(right=card_rect.right - 10, top=card_rect.top + 6))
+
+        # Two All-Time Record Pills (Human & Bot)
+        pill_y = card_rect.top + 22
+        pill_w = (GRID_WIDTH - 28) // 2
+        pill_h = 24
+
+        # 1. All-Time Human Pill
+        h_pill = pygame.Rect(card_rect.left + 10, pill_y, pill_w, pill_h)
+        pygame.draw.rect(self.screen, th['pill_bg'], h_pill, border_radius=5)
+
+        h_badge = pygame.Rect(h_pill.left + 4, h_pill.top + 4, 44, 16)
+        pygame.draw.rect(self.screen, th['badge_human'], h_badge, border_radius=3)
+        hb_txt = FONT_MICRO.render("HUMAN", True, SCORE_TEXT_COLOR)
+        self.screen.blit(hb_txt, hb_txt.get_rect(center=h_badge.center))
+
+        h_name_str = self.stats.all_time_human_name[:11]
+        hn_txt = FONT_MICRO.render(h_name_str, True, th['title_color'])
+        self.screen.blit(hn_txt, hn_txt.get_rect(left=h_badge.right + 5, centery=h_pill.centery))
+
+        hs_txt = FONT_TINY.render(f"{self.stats.all_time_human_score:,}", True, th['title_color'])
+        self.screen.blit(hs_txt, hs_txt.get_rect(right=h_pill.right - 6, centery=h_pill.centery))
+
+        # 2. All-Time Bot Pill
+        b_pill = pygame.Rect(h_pill.right + 8, pill_y, pill_w, pill_h)
+        pygame.draw.rect(self.screen, th['pill_bg'], b_pill, border_radius=5)
+
+        b_badge = pygame.Rect(b_pill.left + 4, b_pill.top + 4, 32, 16)
+        pygame.draw.rect(self.screen, th['badge_bot'], b_badge, border_radius=3)
+        bb_txt = FONT_MICRO.render("BOT", True, SCORE_TEXT_COLOR)
+        self.screen.blit(bb_txt, bb_txt.get_rect(center=b_badge.center))
+
+        b_name_str = self.stats.all_time_bot_name[:12]
+        bn_txt = FONT_MICRO.render(b_name_str, True, th['title_color'])
+        self.screen.blit(bn_txt, bn_txt.get_rect(left=b_badge.right + 5, centery=b_pill.centery))
+
+        bs_txt = FONT_TINY.render(f"{self.stats.all_time_bot_score:,}", True, th['title_color'])
+        self.screen.blit(bs_txt, bs_txt.get_rect(right=b_pill.right - 6, centery=b_pill.centery))
+
+        # Divider line
+        div_y = card_rect.top + 50
+        pygame.draw.line(self.screen, th['card_border'], (card_rect.left + 10, div_y), (card_rect.right - 10, div_y), 1)
+
+        # Bottom Section: Session Records
+        sess_y = card_rect.top + 61
+        sh_lbl = FONT_MICRO.render("Session Human Best:", True, th['sub_color'])
+        self.screen.blit(sh_lbl, sh_lbl.get_rect(left=h_pill.left + 2, centery=sess_y))
+        sh_val = FONT_TINY.render(f"{self.stats.session_human_score:,}", True, th['title_color'])
+        self.screen.blit(sh_val, sh_val.get_rect(right=h_pill.right - 4, centery=sess_y))
+
+        sb_lbl = FONT_MICRO.render("Session Bot Best:", True, th['sub_color'])
+        self.screen.blit(sb_lbl, sb_lbl.get_rect(left=b_pill.left + 2, centery=sess_y))
+        sb_val = FONT_TINY.render(f"{self.stats.session_bot_score:,}", True, th['title_color'])
+        self.screen.blit(sb_val, sb_val.get_rect(right=b_pill.right - 4, centery=sess_y))
 
     def draw_buttons(self, is_bot_running, speed_mode):
         th = self.theme
@@ -222,16 +343,16 @@ class GameGUI:
 
     def draw_stats_bar(self):
         th = self.theme
-        stats_y = self.grid_y + GRID_HEIGHT + 13
+        stats_y = self.grid_y + GRID_HEIGHT + 10
         card_w = (GRID_WIDTH - 24) // 4
         card_h = 48
 
         # 4 Metric Cards: Moves, Max Tile, Empty Cells, Last Move
         metrics = [
-            ("MOVES", str(self.game.moves)),
-            ("MAX TILE", str(self.game.max_tile)),
+            ("MOVES", f"{self.game.moves:,}"),
+            ("MAX TILE", f"{self.game.max_tile:,}"),
             ("EMPTY", f"{len(self.game.get_empty_cells())}/16"),
-            ("LAST MOVE", self.game.last_move.capitalize() if self.game.last_move else "-"),
+            ("LAST MOVE", self.game.last_move.upper() if self.game.last_move else "-"),
         ]
 
         for i, (title, val) in enumerate(metrics):
@@ -246,7 +367,7 @@ class GameGUI:
             t_val = FONT_SMALL.render(val, True, th['title_color'])
             self.screen.blit(t_val, t_val.get_rect(center=(rect.centerx, rect.top + 32)))
 
-        # Footer Row 1: Action Buttons (Theme, Sound, Lifetime Games counter)
+        # Footer Row 1: Action Buttons (Theme, Sound, Mode Tag, Lifetime Games counter)
         # Theme button
         pygame.draw.rect(self.screen, th['card_bg'], self.theme_btn_rect, border_radius=5)
         pygame.draw.rect(self.screen, th['card_border'], self.theme_btn_rect, width=1, border_radius=5)
@@ -260,6 +381,14 @@ class GameGUI:
         snd_lbl = FONT_TINY.render(snd_txt, True, th['sub_color'])
         self.screen.blit(snd_lbl, snd_lbl.get_rect(center=self.sound_btn_rect.center))
 
+        # Run Mode Tag (Pure Human vs Bot Assisted)
+        pygame.draw.rect(self.screen, th['card_bg'], self.mode_tag_rect, border_radius=5)
+        pygame.draw.rect(self.screen, th['card_border'], self.mode_tag_rect, width=1, border_radius=5)
+        mode_str = "Bot Assisted" if self.game.used_bot else "Pure Human"
+        mode_col = th['btn_bot_active'] if self.game.used_bot else th['sub_color']
+        mode_lbl = FONT_TINY.render(mode_str, True, mode_col)
+        self.screen.blit(mode_lbl, mode_lbl.get_rect(center=self.mode_tag_rect.center))
+
         # Total games played indicator (right aligned on button row)
         games_txt = f"Games: {self.stats.games_played}"
         games_surf = FONT_TINY.render(games_txt, True, th['sub_color'])
@@ -268,7 +397,7 @@ class GameGUI:
         # Footer Row 2: Dedicated Keyboard Shortcuts Legend (Zero overlap!)
         hint_txt = "Space: Bot  •  N: Step  •  U: Undo  •  S: Speed  •  T: Theme  •  M: Sound"
         hint_surf = FONT_TINY.render(hint_txt, True, th['sub_color'])
-        self.screen.blit(hint_surf, hint_surf.get_rect(center=(WIDTH // 2, 668)))
+        self.screen.blit(hint_surf, hint_surf.get_rect(center=(WIDTH // 2, 718)))
 
     def draw_milestone_banner(self):
         if self.banner_text and time.time() < self.banner_end_time:
@@ -290,18 +419,90 @@ class GameGUI:
             t_over = FONT_HUGE.render("Game Over!", True, th['title_color'])
             self.screen.blit(t_over, t_over.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 - 35)))
 
-            score_txt = f"Final Score: {self.game.score} | Max Tile: {self.game.max_tile}"
+            mode_label = "Bot Assisted" if self.game.used_bot else "Pure Human"
+            score_txt = f"Score: {self.game.score:,} | Max: {self.game.max_tile:,} ({mode_label})"
             t_sc = FONT_SMALL.render(score_txt, True, th['sub_color'])
             self.screen.blit(t_sc, t_sc.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 + 10)))
 
             t_restart = FONT_SMALL.render("Press 'R' to Restart  |  'U' to Undo", True, th['title_color'])
             self.screen.blit(t_restart, t_restart.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 + 45)))
 
+    def draw_record_modal(self):
+        """Renders the New All-Time Record modal overlay with sanitized text input."""
+        if not self.record_modal_active:
+            return
+        th = self.theme
+
+        # Full-screen semi-transparent backdrop
+        backdrop = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        backdrop.fill(th['modal_overlay'])
+        self.screen.blit(backdrop, (0, 0))
+
+        # Modal card container
+        mw, mh = 370, 250
+        mx = (WIDTH - mw) // 2
+        my = (HEIGHT - mh) // 2
+        modal_rect = pygame.Rect(mx, my, mw, mh)
+        pygame.draw.rect(self.screen, th['bg'], modal_rect, border_radius=12)
+        pygame.draw.rect(self.screen, th['banner_bg'], modal_rect, width=2, border_radius=12)
+
+        # Title & Category
+        title_s = FONT_MEDIUM.render("NEW ALL-TIME RECORD!", True, th['title_color'])
+        self.screen.blit(title_s, title_s.get_rect(center=(modal_rect.centerx, my + 32)))
+
+        cat_str = "Bot-Assisted Category" if self.modal_record_type == 'bot' else "Pure Human Category"
+        cat_col = th['badge_bot'] if self.modal_record_type == 'bot' else th['badge_human']
+        cat_s = FONT_TINY.render(cat_str, True, cat_col)
+        self.screen.blit(cat_s, cat_s.get_rect(center=(modal_rect.centerx, my + 58)))
+
+        # Score Display
+        score_s = FONT_BIG.render(f"{self.modal_record_score:,}", True, th['btn_bot_active'])
+        self.screen.blit(score_s, score_s.get_rect(center=(modal_rect.centerx, my + 92)))
+
+        # Instruction
+        inst_s = FONT_TINY.render("Enter your name for the high scores board:", True, th['title_color'])
+        self.screen.blit(inst_s, inst_s.get_rect(center=(modal_rect.centerx, my + 126)))
+
+        # Input field + Save button row
+        inp_x = mx + 24
+        inp_y = my + 144
+        inp_w = 236
+        inp_h = 36
+        inp_rect = pygame.Rect(inp_x, inp_y, inp_w, inp_h)
+        pygame.draw.rect(self.screen, th['grid_bg'], inp_rect, border_radius=6)
+        pygame.draw.rect(self.screen, th['btn_bot_active'], inp_rect, width=2, border_radius=6)
+
+        cursor = "|" if int(time.time() * 2) % 2 == 0 else ""
+        if self.modal_input_text:
+            inp_txt = FONT_SMALL.render(self.modal_input_text + cursor, True, th['title_color'])
+        else:
+            placeholder = cursor if cursor else "Your Name"
+            col = th['title_color'] if cursor else th['sub_color']
+            inp_txt = FONT_SMALL.render(placeholder, True, col)
+        self.screen.blit(inp_txt, inp_txt.get_rect(left=inp_rect.left + 10, centery=inp_rect.centery))
+
+        # Save Button
+        self.modal_save_rect = pygame.Rect(inp_rect.right + 8, inp_y, 78, inp_h)
+        pygame.draw.rect(self.screen, th['btn_bot_active'], self.modal_save_rect, border_radius=6)
+        save_s = FONT_SMALL.render("Save", True, SCORE_TEXT_COLOR)
+        self.screen.blit(save_s, save_s.get_rect(center=self.modal_save_rect.center))
+
+        # Skip (Anonymous) Button
+        self.modal_skip_rect = pygame.Rect(modal_rect.centerx - 80, my + 190, 160, 24)
+        skip_s = FONT_TINY.render("Skip (Enter / Esc)", True, th['sub_color'])
+        self.screen.blit(skip_s, skip_s.get_rect(center=self.modal_skip_rect.center))
+
+        # Security Note
+        sec_s = FONT_MICRO.render("Alphanumeric, spaces, underscores, and hyphens only (max 16 chars).", True, th['sub_color'])
+        self.screen.blit(sec_s, sec_s.get_rect(center=(modal_rect.centerx, my + 226)))
+
     def update_display(self, is_bot_running, speed_mode):
         self.draw_board()
         self.draw_header()
+        self.draw_leaderboard_card()
         self.draw_buttons(is_bot_running, speed_mode)
         self.draw_stats_bar()
         self.draw_milestone_banner()
         self.draw_game_over()
+        self.draw_record_modal()
         pygame.display.flip()

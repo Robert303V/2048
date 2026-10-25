@@ -1,7 +1,7 @@
 import pygame
 
 # --- Window & Layout Dimensions ---
-WIDTH, HEIGHT = 500, 700
+WIDTH, HEIGHT = 500, 750
 GRID_WIDTH, GRID_HEIGHT = 400, 400
 CELL_SIZE = GRID_WIDTH / 4
 CELL_PADDING = 9
@@ -38,6 +38,7 @@ THEMES = {
         'header_text_val': (255, 255, 255),
         'card_bg': (198, 184, 171),
         'card_border': (176, 163, 150),
+        'pill_bg': (188, 174, 161),
         'title_color': (119, 110, 101),
         'sub_color': (140, 130, 120),
         'btn_ai_active': (237, 142, 70),
@@ -45,11 +46,15 @@ THEMES = {
         'btn_bot_active': (237, 142, 70),
         'btn_bot_idle': (143, 122, 102),
         'btn_general': (155, 140, 125),
+        'badge_human': (74, 133, 5),
+        'badge_bot': (217, 106, 34),
+        'live_dot': (56, 142, 60),
         'text_dark': (119, 110, 101),
         'text_light': (249, 246, 242),
         'banner_bg': (237, 194, 46),
         'banner_text': (255, 255, 255),
         'game_over_overlay': (238, 228, 218, 190),
+        'modal_overlay': (20, 18, 16, 175),
     },
     'Dark': {
         'bg': (26, 28, 36),
@@ -60,6 +65,7 @@ THEMES = {
         'header_text_val': (255, 255, 255),
         'card_bg': (34, 38, 48),
         'card_border': (52, 58, 74),
+        'pill_bg': (42, 47, 60),
         'title_color': (245, 247, 252),
         'sub_color': (150, 158, 178),
         'btn_ai_active': (235, 125, 55),
@@ -67,11 +73,15 @@ THEMES = {
         'btn_bot_active': (235, 125, 55),
         'btn_bot_idle': (60, 68, 88),
         'btn_general': (50, 56, 72),
+        'badge_human': (61, 122, 4),
+        'badge_bot': (197, 88, 24),
+        'live_dot': (76, 175, 80),
         'text_dark': (30, 32, 40),
         'text_light': (249, 246, 242),
         'banner_bg': (158, 209, 142),
         'banner_text': (25, 45, 25),
         'game_over_overlay': (20, 22, 28, 210),
+        'modal_overlay': (10, 12, 18, 195),
     },
 }
 
@@ -93,3 +103,4 @@ FONT_BIG = pygame.font.Font(FONT_PATH, 36) if FONT_PATH else pygame.font.Font(No
 FONT_MEDIUM = pygame.font.Font(FONT_PATH, 26) if FONT_PATH else pygame.font.Font(None, 26)
 FONT_SMALL = pygame.font.Font(FONT_PATH, 19) if FONT_PATH else pygame.font.Font(None, 19)
 FONT_TINY = pygame.font.Font(FONT_PATH, 14) if FONT_PATH else pygame.font.Font(None, 14)
+FONT_MICRO = pygame.font.Font(FONT_PATH, 11) if FONT_PATH else pygame.font.Font(None, 11)
