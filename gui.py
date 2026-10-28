@@ -43,6 +43,14 @@ class GameGUI:
         self.modal_save_rect = pygame.Rect(0, 0, 0, 0)
         self.modal_skip_rect = pygame.Rect(0, 0, 0, 0)
 
+        # High Score Celebration & Inspect Final Board State
+        self.score_pulse_end_time = 0.0
+        self.score_pulse_type = None
+        self.viewing_final_board = False
+        self.view_board_btn_rect = pygame.Rect(0, 0, 0, 0)
+        self.inspect_summary_btn_rect = pygame.Rect(0, 0, 0, 0)
+        self.inspect_restart_btn_rect = pygame.Rect(0, 0, 0, 0)
+
         # Top Action Buttons (Row: y=154, h=35)
         btn_y = 154
         btn_h = 35
@@ -71,6 +79,26 @@ class GameGUI:
         self.banner_text = f"🎉 {tile_value} Unlocked! Keep Going!"
         self.banner_end_time = time.time() + 3.0
         self.sound.play_milestone()
+
+    def trigger_celebration(self, celebration):
+        """Triggers a non-interrupting mid-run high score banner and score box glow animation."""
+        if not celebration:
+            return
+        self.banner_text = celebration.get('banner', "🏆 NEW HIGH SCORE!")
+        self.banner_end_time = time.time() + 3.2
+        self.score_pulse_end_time = time.time() + 2.5
+        self.score_pulse_type = 'human' if 'human' in celebration.get('type', '') else 'bot'
+        self.sound.play_milestone()
+
+    def toggle_view_final_board(self, force_state=None):
+        """Toggles between the Game Over summary overlay and an unobstructed view of the final board."""
+        if not self.game.is_game_over():
+            self.viewing_final_board = False
+            return
+        if force_state is not None:
+            self.viewing_final_board = bool(force_state)
+        else:
+            self.viewing_final_board = not self.viewing_final_board
 
     def open_record_modal(self, record_type, score):
         """Opens the New All-Time Record modal overlay for player name entry."""
@@ -140,6 +168,9 @@ class GameGUI:
 
     def draw_header(self):
         th = self.theme
+        now = time.time()
+        pulsing = now < self.score_pulse_end_time
+
         # Game Title & Subtitle
         title_surf = FONT_HUGE.render("2048", True, th['title_color'])
         self.screen.blit(title_surf, (self.grid_x, 12))
@@ -154,17 +185,20 @@ class GameGUI:
 
         # 1. Current Score Box
         score_rect = pygame.Rect(WIDTH - self.grid_x - (box_w * 2 + 10), box_y, box_w, box_h)
-        pygame.draw.rect(self.screen, th['header_box'], score_rect, border_radius=6)
-        lbl_s = FONT_TINY.render("SCORE", True, th['header_text_lbl'])
+        score_bg = th['banner_bg'] if pulsing else th['header_box']
+        pygame.draw.rect(self.screen, score_bg, score_rect, border_radius=6)
+        lbl_s = FONT_TINY.render("SCORE", True, th['banner_text'] if pulsing else th['header_text_lbl'])
         lbl_s_rect = lbl_s.get_rect(center=(score_rect.centerx, score_rect.top + 14))
         self.screen.blit(lbl_s, lbl_s_rect)
-        val_s = FONT_MEDIUM.render(f"{self.game.score:,}", True, th['header_text_val'])
+        val_s = FONT_MEDIUM.render(f"{self.game.score:,}", True, th['banner_text'] if pulsing else th['header_text_val'])
         val_s_rect = val_s.get_rect(center=(score_rect.centerx, score_rect.top + 34))
         self.screen.blit(val_s, val_s_rect)
 
         # 2. Best Score Box
         best_rect = pygame.Rect(WIDTH - self.grid_x - box_w, box_y, box_w, box_h)
         pygame.draw.rect(self.screen, th['header_box'], best_rect, border_radius=6)
+        if pulsing:
+            pygame.draw.rect(self.screen, th['banner_bg'], best_rect, width=2, border_radius=6)
         lbl_b = FONT_TINY.render("BEST", True, th['header_text_lbl'])
         lbl_b_rect = lbl_b.get_rect(center=(best_rect.centerx, best_rect.top + 14))
         self.screen.blit(lbl_b, lbl_b_rect)
@@ -175,6 +209,9 @@ class GameGUI:
     def draw_leaderboard_card(self):
         """Renders the 4-Category Leaderboard Card (All-Time & Session for Human & Bot)."""
         th = self.theme
+        now = time.time()
+        pulsing = now < self.score_pulse_end_time
+
         card_rect = pygame.Rect(self.grid_x, self.leaderboard_y, GRID_WIDTH, self.leaderboard_h)
         pygame.draw.rect(self.screen, th['card_bg'], card_rect, border_radius=8)
         pygame.draw.rect(self.screen, th['card_border'], card_rect, width=1, border_radius=8)
@@ -194,6 +231,8 @@ class GameGUI:
         # 1. All-Time Human Pill
         h_pill = pygame.Rect(card_rect.left + 10, pill_y, pill_w, pill_h)
         pygame.draw.rect(self.screen, th['pill_bg'], h_pill, border_radius=5)
+        if pulsing and self.score_pulse_type == 'human':
+            pygame.draw.rect(self.screen, th['banner_bg'], h_pill, width=2, border_radius=5)
 
         h_badge = pygame.Rect(h_pill.left + 4, h_pill.top + 4, 44, 16)
         pygame.draw.rect(self.screen, th['badge_human'], h_badge, border_radius=3)
@@ -210,6 +249,8 @@ class GameGUI:
         # 2. All-Time Bot Pill
         b_pill = pygame.Rect(h_pill.right + 8, pill_y, pill_w, pill_h)
         pygame.draw.rect(self.screen, th['pill_bg'], b_pill, border_radius=5)
+        if pulsing and self.score_pulse_type == 'bot':
+            pygame.draw.rect(self.screen, th['banner_bg'], b_pill, width=2, border_radius=5)
 
         b_badge = pygame.Rect(b_pill.left + 4, b_pill.top + 4, 32, 16)
         pygame.draw.rect(self.screen, th['badge_bot'], b_badge, border_radius=3)
@@ -396,7 +437,7 @@ class GameGUI:
 
         # Footer Row 2 & 3: Complete Keyboard & Mouse Controls Legend
         hint_line1 = "WASD / Arrows: Move  •  Space: Run/Pause Bot  •  N: Step  •  U: Undo"
-        hint_line2 = "F: Speed (Normal/Fast/Turbo)  •  R: Reset  •  T: Theme  •  M: Sound"
+        hint_line2 = "F: Speed  •  R: Reset  •  V: View Board  •  T: Theme  •  M: Sound"
         h1_surf = FONT_MICRO.render(hint_line1, True, th['sub_color'])
         h2_surf = FONT_MICRO.render(hint_line2, True, th['sub_color'])
         self.screen.blit(h1_surf, h1_surf.get_rect(center=(WIDTH // 2, 712)))
@@ -413,22 +454,53 @@ class GameGUI:
             self.banner_text = None
 
     def draw_game_over(self):
-        if self.game.is_game_over():
-            th = self.theme
+        if not self.game.is_game_over():
+            self.viewing_final_board = False
+            return
+
+        th = self.theme
+        if not self.viewing_final_board:
             overlay = pygame.Surface((GRID_WIDTH, GRID_HEIGHT), pygame.SRCALPHA)
             overlay.fill(th['game_over_overlay'])
             self.screen.blit(overlay, (self.grid_x, self.grid_y))
 
             t_over = FONT_HUGE.render("Game Over!", True, th['title_color'])
-            self.screen.blit(t_over, t_over.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 - 35)))
+            self.screen.blit(t_over, t_over.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 - 52)))
 
             mode_label = "Bot Assisted" if self.game.used_bot else "Pure Human"
             score_txt = f"Score: {self.game.score:,} | Max: {self.game.max_tile:,} ({mode_label})"
             t_sc = FONT_SMALL.render(score_txt, True, th['sub_color'])
-            self.screen.blit(t_sc, t_sc.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 + 10)))
+            self.screen.blit(t_sc, t_sc.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 - 8)))
 
-            t_restart = FONT_SMALL.render("Press 'R' to Restart  |  'U' to Undo", True, th['title_color'])
-            self.screen.blit(t_restart, t_restart.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 + 45)))
+            t_restart = FONT_TINY.render("Press 'R' to Restart  |  'U' to Undo  |  'V' to View Board", True, th['title_color'])
+            self.screen.blit(t_restart, t_restart.get_rect(center=(WIDTH // 2, self.grid_y + GRID_HEIGHT // 2 + 24)))
+
+            # Clickable View Board (V) Button
+            btn_w, btn_h = 156, 34
+            self.view_board_btn_rect = pygame.Rect((WIDTH - btn_w) // 2, self.grid_y + GRID_HEIGHT // 2 + 48, btn_w, btn_h)
+            pygame.draw.rect(self.screen, th['btn_general'], self.view_board_btn_rect, border_radius=6)
+            vb_txt = FONT_SMALL.render("View Board (V)", True, SCORE_TEXT_COLOR)
+            self.screen.blit(vb_txt, vb_txt.get_rect(center=self.view_board_btn_rect.center))
+        else:
+            # Compact top floating bar so the player can clearly inspect the final board
+            bar_rect = pygame.Rect(self.grid_x + 8, self.grid_y + 8, GRID_WIDTH - 16, 36)
+            bar_surf = pygame.Surface((bar_rect.width, bar_rect.height), pygame.SRCALPHA)
+            bar_surf.fill((35, 32, 28, 225))
+            self.screen.blit(bar_surf, bar_rect.topleft)
+            pygame.draw.rect(self.screen, th['banner_bg'], bar_rect, width=1, border_radius=6)
+
+            lbl = FONT_TINY.render("Game Over — Final Board", True, SCORE_TEXT_COLOR)
+            self.screen.blit(lbl, lbl.get_rect(left=bar_rect.left + 10, centery=bar_rect.centery))
+
+            self.inspect_restart_btn_rect = pygame.Rect(bar_rect.right - 84, bar_rect.top + 5, 78, 26)
+            pygame.draw.rect(self.screen, th.get('btn_bot_active', th['btn_ai_active']), self.inspect_restart_btn_rect, border_radius=4)
+            r_txt = FONT_MICRO.render("Restart (R)", True, SCORE_TEXT_COLOR)
+            self.screen.blit(r_txt, r_txt.get_rect(center=self.inspect_restart_btn_rect.center))
+
+            self.inspect_summary_btn_rect = pygame.Rect(self.inspect_restart_btn_rect.left - 90, bar_rect.top + 5, 84, 26)
+            pygame.draw.rect(self.screen, th['btn_general'], self.inspect_summary_btn_rect, border_radius=4)
+            s_txt = FONT_MICRO.render("Summary (V)", True, SCORE_TEXT_COLOR)
+            self.screen.blit(s_txt, s_txt.get_rect(center=self.inspect_summary_btn_rect.center))
 
     def draw_record_modal(self):
         """Renders the New All-Time Record modal overlay with sanitized text input."""

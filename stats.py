@@ -47,7 +47,27 @@ class GameStats:
 
         self._last_save_time = 0
         self._dirty = False
+        self.last_celebration = None
         self.load()
+        self.start_new_run()
+
+    def start_new_run(self):
+        """Snapshots the all-time records at the start of a run for mid-game celebration and end-of-game modal checks."""
+        self.initial_human_best = self.all_time_human_score
+        self.initial_bot_best = self.all_time_bot_score
+        self.passed_human_celebrated = False
+        self.passed_bot_celebrated = False
+        self.last_celebration = None
+
+    def on_bot_used(self, current_score=0):
+        """Handles mid-run transition from Pure Human to Bot-Assisted mode."""
+        if self.all_time_human_score > self.initial_human_best:
+            self.all_time_human_score = self.initial_human_best
+        if current_score > self.session_bot_score:
+            self.session_bot_score = current_score
+        if current_score > self.all_time_bot_score:
+            self.all_time_bot_score = current_score
+        self.save(force=False)
 
     @property
     def high_score(self):
@@ -114,51 +134,95 @@ class GameStats:
         except Exception:
             pass
 
-    def update(self, current_score, max_tile, used_bot, record_prompt_shown=True, player_name=None):
+    def update(self, current_score, max_tile, used_bot, record_prompt_shown=True, player_name=None, is_game_over=False):
         """
         Updates score across appropriate session and all-time categories.
-        Returns a record_break dict if a new All-Time Record was just crossed and record_prompt_shown is False.
+        Sets self.last_celebration when a high-score threshold is crossed mid-run without stopping play.
+        Returns a record_break dict ONLY at the end of the run (when is_game_over is True and record_prompt_shown is False).
         """
         changed = False
         record_break = None
+        self.last_celebration = None
 
         if used_bot:
             if current_score > self.session_bot_score:
                 self.session_bot_score = current_score
             if current_score > self.all_time_bot_score:
-                if not record_prompt_shown:
-                    record_break = {
-                        'type': 'bot',
-                        'score': current_score,
-                        'prev_best': self.all_time_bot_score,
-                        'prev_name': self.all_time_bot_name,
-                    }
                 self.all_time_bot_score = current_score
                 if player_name:
                     self.all_time_bot_name = sanitize_name(player_name, "Bot Master")
                 changed = True
+
+            if not self.passed_human_celebrated and current_score > self.initial_human_best:
+                self.passed_human_celebrated = True
+                self.last_celebration = {
+                    'type': 'passed_human',
+                    'score': current_score,
+                    'prev_best': self.initial_human_best,
+                    'prev_name': self.all_time_human_name,
+                    'banner': f"🔥 Passed Human High Score ({self.initial_human_best:,})!",
+                }
+
+            if not self.passed_bot_celebrated and current_score > self.initial_bot_best:
+                self.passed_bot_celebrated = True
+                self.last_celebration = {
+                    'type': 'new_bot_record',
+                    'score': current_score,
+                    'prev_best': self.initial_bot_best,
+                    'prev_name': self.all_time_bot_name,
+                    'banner': "🏆 NEW ALL-TIME BOT RECORD!",
+                }
+
+            if is_game_over and not record_prompt_shown and current_score > self.initial_bot_best:
+                record_break = {
+                    'type': 'bot',
+                    'score': current_score,
+                    'prev_best': self.initial_bot_best,
+                    'prev_name': self.all_time_bot_name,
+                }
         else:
             if current_score > self.session_human_score:
                 self.session_human_score = current_score
             if current_score > self.all_time_human_score:
-                if not record_prompt_shown:
-                    record_break = {
-                        'type': 'human',
-                        'score': current_score,
-                        'prev_best': self.all_time_human_score,
-                        'prev_name': self.all_time_human_name,
-                    }
                 self.all_time_human_score = current_score
                 if player_name:
                     self.all_time_human_name = sanitize_name(player_name, "Champion")
                 changed = True
 
+            if not self.passed_human_celebrated and current_score > self.initial_human_best:
+                self.passed_human_celebrated = True
+                self.last_celebration = {
+                    'type': 'new_human_record',
+                    'score': current_score,
+                    'prev_best': self.initial_human_best,
+                    'prev_name': self.all_time_human_name,
+                    'banner': "🏆 NEW HUMAN HIGH SCORE!",
+                }
+
+            if not self.passed_bot_celebrated and current_score > self.initial_bot_best:
+                self.passed_bot_celebrated = True
+                self.last_celebration = {
+                    'type': 'passed_overall',
+                    'score': current_score,
+                    'prev_best': self.initial_bot_best,
+                    'prev_name': self.all_time_bot_name,
+                    'banner': "👑 NEW OVERALL ALL-TIME RECORD!",
+                }
+
+            if is_game_over and not record_prompt_shown and current_score > self.initial_human_best:
+                record_break = {
+                    'type': 'human',
+                    'score': current_score,
+                    'prev_best': self.initial_human_best,
+                    'prev_name': self.all_time_human_name,
+                }
+
         if max_tile > self.highest_tile:
             self.highest_tile = max_tile
             changed = True
 
-        if changed:
-            self.save(force=bool(record_break))
+        if changed or record_break:
+            self.save(force=bool(record_break or is_game_over))
 
         return record_break
 

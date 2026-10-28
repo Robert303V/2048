@@ -15,11 +15,11 @@
                 <div class="subtitle">EXPECTIMAX BOT</div>
             </div>
             <div class="scores-group">
-                <div class="score-box">
+                <div class="score-box" id="score-box">
                     <div class="score-lbl">SCORE</div>
                     <div class="score-val" id="score-display">0</div>
                 </div>
-                <div class="score-box">
+                <div class="score-box" id="best-box">
                     <div class="score-lbl">BEST</div>
                     <div class="score-val" id="best-display">61,356</div>
                 </div>
@@ -34,12 +34,12 @@
                     <span class="lb-status" id="lb-sync-status">● Live</span>
                 </div>
                 <div class="lb-grid">
-                    <div class="lb-item">
+                    <div class="lb-item" id="lb-human-item">
                         <span class="lb-badge human-badge">👤 HUMAN</span>
                         <span class="lb-name" id="alltime-human-name">Grandmaster</span>
                         <span class="lb-score" id="alltime-human-score">18,440</span>
                     </div>
-                    <div class="lb-item">
+                    <div class="lb-item" id="lb-bot-item">
                         <span class="lb-badge bot-badge">🤖 BOT</span>
                         <span class="lb-name" id="alltime-bot-name">Expectimax Bot</span>
                         <span class="lb-score" id="alltime-bot-score">61,356</span>
@@ -86,10 +86,22 @@
 
             <div class="milestone-banner" id="milestone-banner">🎉 2048 Unlocked! Keep Going!</div>
 
+            <!-- Compact Bar when Inspecting Final Board after Game Over -->
+            <div class="inspect-board-bar" id="inspect-board-bar">
+                <span class="inspect-board-lbl" id="inspect-board-lbl">🏁 Final Board</span>
+                <div class="inspect-board-actions">
+                    <button class="btn-inspect-action" id="btn-show-summary" type="button">Summary (V)</button>
+                    <button class="btn-inspect-action primary" type="button" onclick="resetGame()">Try Again (R)</button>
+                </div>
+            </div>
+
             <div class="game-over-overlay" id="game-over-overlay">
                 <div class="game-over-title">Game Over!</div>
                 <div class="game-over-desc" id="game-over-desc">Final Score: 0</div>
-                <button class="btn" style="padding: 10px 20px; font-size: 15px;" onclick="resetGame()">Try Again</button>
+                <div class="game-over-actions">
+                    <button class="btn btn-view-board" id="btn-view-board" type="button">👁️ View Board (V)</button>
+                    <button class="btn btn-try-again" type="button" onclick="resetGame()">Try Again (R)</button>
+                </div>
             </div>
         </div>
 
@@ -146,8 +158,8 @@
                     <span class="control-keys"><kbd>F</kbd> (Normal/Fast/Turbo)</span>
                 </div>
                 <div class="control-item">
-                    <span class="control-action">Reset Game</span>
-                    <span class="control-keys"><kbd>R</kbd> / Reset</span>
+                    <span class="control-action">Reset / View Board</span>
+                    <span class="control-keys"><kbd>R</kbd> Reset &bull; <kbd>V</kbd> Board</span>
                 </div>
                 <div class="control-item">
                     <span class="control-action">Toggle Theme</span>
@@ -161,7 +173,7 @@
         </section>
     </div>
 
-    <!-- New All-Time Record Modal (Protected against XSS & Layout Breaks) -->
+    <!-- New All-Time Record Modal (Shown at End of Run so Gameplay Never Stops) -->
     <div class="modal-overlay" id="record-modal">
         <div class="modal-content">
             <div class="modal-icon">🏆</div>
@@ -189,6 +201,9 @@
         let isBotRunning = false;
         let botTimer = null;
         let speedIndex = 0;
+        let isViewingFinalBoard = false;
+        let bannerTimer = null;
+
         const SPEEDS = [
             { name: "Normal", delay: 90 },
             { name: "Fast", delay: 30 },
@@ -200,8 +215,12 @@
 
         // DOM elements
         const tileContainer = document.getElementById('tile-container');
+        const scoreBox = document.getElementById('score-box');
+        const bestBox = document.getElementById('best-box');
         const scoreDisplay = document.getElementById('score-display');
         const bestDisplay = document.getElementById('best-display');
+        const lbHumanItem = document.getElementById('lb-human-item');
+        const lbBotItem = document.getElementById('lb-bot-item');
         const statMoves = document.getElementById('stat-moves');
         const statMaxTile = document.getElementById('stat-maxtile');
         const statEmpty = document.getElementById('stat-empty');
@@ -214,6 +233,10 @@
         const milestoneBanner = document.getElementById('milestone-banner');
         const gameOverOverlay = document.getElementById('game-over-overlay');
         const gameOverDesc = document.getElementById('game-over-desc');
+        const inspectBoardBar = document.getElementById('inspect-board-bar');
+        const inspectBoardLbl = document.getElementById('inspect-board-lbl');
+        const btnViewBoard = document.getElementById('btn-view-board');
+        const btnShowSummary = document.getElementById('btn-show-summary');
 
         // Leaderboard DOM elements
         const alltimeHumanName = document.getElementById('alltime-human-name');
@@ -238,6 +261,13 @@
             playerNameInput.value = playerNameInput.value.replace(/[^a-zA-Z0-9 _-]/g, '');
         });
 
+        function triggerElementPulse(el, className) {
+            if (!el) return;
+            el.classList.remove(className);
+            void el.offsetWidth;
+            el.classList.add(className);
+        }
+
         function updateLeaderboardDisplay() {
             // Strictly set .textContent for absolute XSS security
             alltimeHumanName.textContent = game.allTimeHumanName;
@@ -251,6 +281,11 @@
             // Best display in header shows the highest overall all-time score
             const overallBest = Math.max(game.allTimeBotBest, game.allTimeHumanBest);
             bestDisplay.textContent = overallBest.toLocaleString();
+
+            // Highlight score box when actively beating a record during the run
+            const isBeatingRecord = (!game.usedBotInGame && game.score > game.initialHumanBest) ||
+                                    (game.usedBotInGame && game.score > game.initialBotBest);
+            scoreBox.classList.toggle('record-active-glow', isBeatingRecord);
         }
         window.updateLeaderboardDisplay = updateLeaderboardDisplay;
 
@@ -259,6 +294,33 @@
         function setTilePosition(el, r, c) {
             el.style.left = `calc(${c * 25}% + ${c * 2.25}px)`;
             el.style.top = `calc(${r * 25}% + ${r * 2.25}px)`;
+        }
+
+        function updateGameOverView() {
+            if (game.gameOver) {
+                const modeLabel = game.usedBotInGame ? 'Bot Assisted' : 'Pure Human';
+                gameOverDesc.textContent = `Score: ${game.score.toLocaleString()} | Max: ${game.getMaxTile().toLocaleString()} (${modeLabel})`;
+                inspectBoardLbl.textContent = `🏁 Final Board (${game.score.toLocaleString()} pts)`;
+
+                if (isViewingFinalBoard) {
+                    gameOverOverlay.classList.remove('active');
+                    inspectBoardBar.classList.add('active');
+                } else {
+                    gameOverOverlay.classList.add('active');
+                    inspectBoardBar.classList.remove('active');
+                }
+                stopBot();
+            } else {
+                isViewingFinalBoard = false;
+                gameOverOverlay.classList.remove('active');
+                inspectBoardBar.classList.remove('active');
+            }
+        }
+
+        function toggleViewFinalBoard() {
+            if (!game.gameOver) return;
+            isViewingFinalBoard = !isViewingFinalBoard;
+            updateGameOverView();
         }
 
         function updateUI(justSpawned = null, mergedCoords = null, transitions = null, animateSlide = false) {
@@ -285,14 +347,8 @@
             // Render Tiles (with smooth slide trajectory when active)
             renderTiles(justSpawned, mergedCoords, transitions, animateSlide);
 
-            if (game.gameOver) {
-                const modeLabel = game.usedBotInGame ? 'Bot Assisted' : 'Pure Human';
-                gameOverDesc.textContent = `Score: ${game.score.toLocaleString()} | Max: ${game.getMaxTile().toLocaleString()} (${modeLabel})`;
-                gameOverOverlay.classList.add('active');
-                stopBot();
-            } else {
-                gameOverOverlay.classList.remove('active');
-            }
+            // Update Game Over / Final Board Inspection UI
+            updateGameOverView();
         }
 
         function renderStaticGrid(justSpawned = null, mergedCoords = null) {
@@ -375,13 +431,32 @@
             }, 75);
         }
 
-        function triggerMilestone(val) {
-            milestoneBanner.textContent = `🎉 ${val} Unlocked! Keep Going!`;
+        function showBanner(text, isRecord = false) {
+            if (bannerTimer) clearTimeout(bannerTimer);
+            milestoneBanner.textContent = text;
+            milestoneBanner.classList.toggle('record-banner', isRecord);
             milestoneBanner.classList.add('active');
             window.soundManager.playMilestone();
-            setTimeout(() => {
+            bannerTimer = setTimeout(() => {
                 milestoneBanner.classList.remove('active');
-            }, 3000);
+                milestoneBanner.classList.remove('record-banner');
+            }, 3200);
+        }
+
+        function triggerMilestone(val) {
+            showBanner(`🎉 ${val} Unlocked! Keep Going!`, false);
+        }
+
+        function triggerHighScoreCelebration(celebration) {
+            // Non-interrupting celebratory banner + score box & leaderboard pop animations!
+            showBanner(celebration.text, true);
+            triggerElementPulse(scoreBox, 'score-record-pulse');
+            triggerElementPulse(bestBox, 'score-record-pulse');
+            if (celebration.category === 'human') {
+                triggerElementPulse(lbHumanItem, 'lb-record-pulse');
+            } else {
+                triggerElementPulse(lbBotItem, 'lb-record-pulse');
+            }
         }
 
         function openRecordModal(record) {
@@ -421,7 +496,9 @@
         function handleMove(direction, animateSlide = true) {
             const res = game.move(direction);
             if (res.moved) {
-                if (res.justMilestone) {
+                if (res.highScoreCelebration) {
+                    triggerHighScoreCelebration(res.highScoreCelebration);
+                } else if (res.justMilestone) {
                     triggerMilestone(res.justMilestone);
                 } else if (res.highestMerged > 0) {
                     window.soundManager.playMerge(res.highestMerged);
@@ -440,12 +517,11 @@
 
                 updateUI(res.spawn, mergedCoords, res.transitions, animateSlide);
 
-                if (res.recordBreak) {
-                    openRecordModal(res.recordBreak);
-                }
-
                 if (game.gameOver) {
                     window.soundManager.playGameOver();
+                    if (res.recordBreak) {
+                        openRecordModal(res.recordBreak);
+                    }
                 }
                 return true;
             }
@@ -501,12 +577,14 @@
 
         function resetGame() {
             stopBot();
+            isViewingFinalBoard = false;
             game.reset(true);
             updateUI();
         }
 
         function undoMove() {
             stopBot();
+            isViewingFinalBoard = false;
             if (game.undo()) {
                 updateUI();
             }
@@ -537,6 +615,8 @@
         document.getElementById('btn-reset').addEventListener('click', resetGame);
         btnTheme.addEventListener('click', toggleTheme);
         btnSound.addEventListener('click', toggleSound);
+        btnViewBoard.addEventListener('click', toggleViewFinalBoard);
+        btnShowSummary.addEventListener('click', toggleViewFinalBoard);
 
         // Keyboard Controls
         window.addEventListener('keydown', (e) => {
@@ -566,6 +646,8 @@
                 toggleSound();
             } else if (e.key === 'r' || e.key === 'R') {
                 resetGame();
+            } else if ((e.key === 'v' || e.key === 'V') && game.gameOver) {
+                toggleViewFinalBoard();
             } else if (!isBotRunning) {
                 if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') handleMove('left');
                 else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') handleMove('right');

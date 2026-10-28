@@ -23,14 +23,14 @@ def execute_move(game, gui, direction, animate=True, duration=0.095):
             game.max_tile,
             game.used_bot,
             record_prompt_shown=game.record_prompt_shown,
+            is_game_over=game.is_game_over(),
         )
 
         if animate and duration > 0 and game.last_transitions:
             gui.start_animation(game.last_transitions, game.last_spawn, duration=duration)
 
-        if record_break:
-            game.record_prompt_shown = True
-            gui.open_record_modal(record_break['type'], record_break['score'])
+        if gui.stats.last_celebration:
+            gui.trigger_celebration(gui.stats.last_celebration)
         elif game.just_unlocked_milestone:
             gui.trigger_milestone(game.just_unlocked_milestone)
         elif game.highest_tile_merged > 0:
@@ -39,7 +39,12 @@ def execute_move(game, gui, direction, animate=True, duration=0.095):
             gui.sound.play_slide()
 
         if game.is_game_over():
-            gui.sound.play_game_over()
+            gui.toggle_view_final_board(False)
+            if record_break:
+                game.record_prompt_shown = True
+                gui.open_record_modal(record_break['type'], record_break['score'])
+            else:
+                gui.sound.play_game_over()
         return True
     return False
 
@@ -56,6 +61,7 @@ def main():
     last_bot_move_time = 0
 
     gui.stats.increment_games()
+    gui.stats.start_new_run()
 
     while running:
         current_time = pygame.time.get_ticks()
@@ -77,13 +83,32 @@ def main():
             # --- Mouse Click Detection ---
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 pos = event.pos
+                # Game Over overlay / inspect bar buttons
+                if game.is_game_over():
+                    if not gui.viewing_final_board and gui.view_board_btn_rect.collidepoint(pos):
+                        gui.toggle_view_final_board(True)
+                        continue
+                    elif gui.viewing_final_board and gui.inspect_summary_btn_rect.collidepoint(pos):
+                        gui.toggle_view_final_board(False)
+                        continue
+                    elif gui.viewing_final_board and gui.inspect_restart_btn_rect.collidepoint(pos):
+                        gui.finish_animation()
+                        game.reset()
+                        gui.stats.start_new_run()
+                        gui.stats.increment_games()
+                        gui.toggle_view_final_board(False)
+                        is_bot_running = False
+                        continue
+
                 if gui.bot_btn_rect.collidepoint(pos):
                     is_bot_running = not is_bot_running
                 elif gui.step_btn_rect.collidepoint(pos):
                     # Single step with Bot
                     if not game.is_game_over():
                         is_bot_running = False
-                        game.mark_bot_used()
+                        if not game.used_bot:
+                            game.mark_bot_used()
+                            gui.stats.on_bot_used(game.score)
                         best_move = agent.get_best_move(game.get_state())
                         if best_move:
                             execute_move(game, gui, best_move, animate=True, duration=0.095)
@@ -91,12 +116,15 @@ def main():
                     is_bot_running = False
                     gui.finish_animation()
                     game.undo()
+                    gui.toggle_view_final_board(False)
                 elif gui.speed_btn_rect.collidepoint(pos):
                     speed_index = (speed_index + 1) % len(SPEEDS)
                 elif gui.reset_btn_rect.collidepoint(pos):
                     gui.finish_animation()
                     game.reset()
+                    gui.stats.start_new_run()
                     gui.stats.increment_games()
+                    gui.toggle_view_final_board(False)
                     is_bot_running = False
                 elif gui.theme_btn_rect.collidepoint(pos):
                     gui.toggle_theme()
@@ -107,11 +135,15 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     is_bot_running = not is_bot_running
+                elif event.key == pygame.K_v and game.is_game_over():
+                    gui.toggle_view_final_board()
                 elif event.key == pygame.K_n:
                     # Single step with Bot
                     if not game.is_game_over():
                         is_bot_running = False
-                        game.mark_bot_used()
+                        if not game.used_bot:
+                            game.mark_bot_used()
+                            gui.stats.on_bot_used(game.score)
                         best_move = agent.get_best_move(game.get_state())
                         if best_move:
                             execute_move(game, gui, best_move, animate=True, duration=0.095)
@@ -119,6 +151,7 @@ def main():
                     is_bot_running = False
                     gui.finish_animation()
                     game.undo()
+                    gui.toggle_view_final_board(False)
                 elif event.key == pygame.K_f:
                     speed_index = (speed_index + 1) % len(SPEEDS)
                 elif event.key == pygame.K_t:
@@ -128,7 +161,9 @@ def main():
                 elif event.key == pygame.K_r:
                     gui.finish_animation()
                     game.reset()
+                    gui.stats.start_new_run()
                     gui.stats.increment_games()
+                    gui.toggle_view_final_board(False)
                     is_bot_running = False
 
                 # Manual player moves (Arrow keys or WASD) only when Bot is paused
@@ -149,7 +184,9 @@ def main():
         # --- Bot Move Execution ---
         if is_bot_running and not game.is_game_over() and not gui.record_modal_active:
             if current_time - last_bot_move_time >= speed_delay:
-                game.mark_bot_used()
+                if not game.used_bot:
+                    game.mark_bot_used()
+                    gui.stats.on_bot_used(game.score)
                 best_move = agent.get_best_move(game.get_state())
                 if best_move:
                     # In Normal mode (delay = 70ms), animate with a snappy 40ms slide within the delay

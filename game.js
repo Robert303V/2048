@@ -59,6 +59,12 @@ class GameEngine {
         this.usedBotInGame = false;
         this.recordPromptShownForCurrentGame = false;
 
+        // Baseline thresholds at the start of the run
+        this.initialHumanBest = this.allTimeHumanBest;
+        this.initialBotBest = this.allTimeBotBest;
+        this.passedHumanBestCelebrated = false;
+        this.passedBotBestCelebrated = false;
+
         if (incrementGames) {
             this.gamesPlayed++;
             localStorage.setItem('2048_games_played', this.gamesPlayed);
@@ -69,7 +75,17 @@ class GameEngine {
     }
 
     markBotUsed() {
-        this.usedBotInGame = true;
+        if (!this.usedBotInGame) {
+            this.usedBotInGame = true;
+            // If this run had temporarily raised allTimeHumanBest before switching to Bot, restore baseline human best
+            if (this.allTimeHumanBest > this.initialHumanBest) {
+                this.allTimeHumanBest = this.initialHumanBest;
+                localStorage.setItem('2048_alltime_human_score', this.allTimeHumanBest);
+            }
+            if (this.score > this.sessionBotBest) {
+                this.sessionBotBest = this.score;
+            }
+        }
     }
 
     getEmptyCells() {
@@ -181,6 +197,8 @@ class GameEngine {
         const originalLastMove = this.lastMove;
         const originalMilestones = new Set(this.milestones);
         const originalUsedBot = this.usedBotInGame;
+        const originalPassedHuman = this.passedHumanBestCelebrated;
+        const originalPassedBot = this.passedBotBestCelebrated;
 
         const slideLine = (line) => {
             const nonZero = line.filter(v => v !== 0);
@@ -270,6 +288,8 @@ class GameEngine {
             lastMove: originalLastMove,
             milestones: originalMilestones,
             usedBot: originalUsedBot,
+            passedHuman: originalPassedHuman,
+            passedBot: originalPassedBot,
             recordPromptShown: this.recordPromptShownForCurrentGame
         });
         if (this.history.length > 60) this.history.shift();
@@ -279,20 +299,53 @@ class GameEngine {
         this.moves++;
         this.lastMove = direction;
 
-        // Update Session Bests
+        // Update Session Bests & Live All-Time Scores
         if (this.usedBotInGame) {
             if (this.score > this.sessionBotBest) {
                 this.sessionBotBest = this.score;
+            }
+            if (this.score > this.allTimeBotBest) {
+                this.allTimeBotBest = this.score;
+                localStorage.setItem('2048_alltime_bot_score', this.allTimeBotBest);
             }
         } else {
             if (this.score > this.sessionHumanBest) {
                 this.sessionHumanBest = this.score;
             }
+            if (this.score > this.allTimeHumanBest) {
+                this.allTimeHumanBest = this.score;
+                localStorage.setItem('2048_alltime_human_score', this.allTimeHumanBest);
+            }
+        }
+
+        // Check non-interrupting mid-run High Score celebrations!
+        // 1. Passing the Human All-Time High Score (whether playing as Human or Bot)
+        // 2. Passing the Bot / Overall All-Time High Score
+        let highScoreCelebration = null;
+        if (!this.passedBotBestCelebrated && this.score > this.initialBotBest) {
+            this.passedBotBestCelebrated = true;
+            this.passedHumanBestCelebrated = true;
+            highScoreCelebration = {
+                kind: 'bot_record',
+                category: this.usedBotInGame ? 'bot' : 'human',
+                text: this.usedBotInGame
+                    ? `🏆 NEW ALL-TIME BOT RECORD! (${this.score.toLocaleString()})`
+                    : `👑 NEW OVERALL ALL-TIME RECORD! (${this.score.toLocaleString()})`
+            };
+        } else if (!this.passedHumanBestCelebrated && this.score > this.initialHumanBest) {
+            this.passedHumanBestCelebrated = true;
+            highScoreCelebration = {
+                kind: 'human_record',
+                category: 'human',
+                text: this.usedBotInGame
+                    ? `🔥 Passed Human High Score! (${this.score.toLocaleString()})`
+                    : `🏆 NEW HUMAN HIGH SCORE! (${this.score.toLocaleString()})`
+            };
         }
 
         const spawned = this.addNewTile();
 
-        // Check milestones
+        // Check tile milestones
         this.justMilestone = null;
         const currentMax = this.getMaxTile();
         for (const m of [2048, 4096, 8192, 16384]) {
@@ -306,38 +359,23 @@ class GameEngine {
             this.gameOver = true;
         }
 
-        // Check if All-Time Record was broken or extended
+        // Trigger the Name Entry Modal ONLY at the end of the run (Game Over) so gameplay is never interrupted!
         let recordBreak = null;
-        if (!this.recordPromptShownForCurrentGame) {
-            if (this.usedBotInGame && this.score > this.allTimeBotBest) {
+        if (this.gameOver && !this.recordPromptShownForCurrentGame) {
+            if (this.usedBotInGame && this.score > this.initialBotBest) {
                 recordBreak = {
                     type: 'bot',
                     score: this.score,
-                    prevBest: this.allTimeBotBest,
+                    prevBest: this.initialBotBest,
                     prevName: this.allTimeBotName
                 };
-            } else if (!this.usedBotInGame && this.score > this.allTimeHumanBest) {
+            } else if (!this.usedBotInGame && this.score > this.initialHumanBest) {
                 recordBreak = {
                     type: 'human',
                     score: this.score,
-                    prevBest: this.allTimeHumanBest,
+                    prevBest: this.initialHumanBest,
                     prevName: this.allTimeHumanName
                 };
-            }
-        } else {
-            // Continue updating all-time record score in the same game after modal was already shown
-            if (this.usedBotInGame && this.score > this.allTimeBotBest) {
-                this.allTimeBotBest = this.score;
-                localStorage.setItem('2048_alltime_bot_score', this.allTimeBotBest);
-                if (this.gameOver) {
-                    this.pushGlobalRecord('bot', this.allTimeBotBest, this.allTimeBotName);
-                }
-            } else if (!this.usedBotInGame && this.score > this.allTimeHumanBest) {
-                this.allTimeHumanBest = this.score;
-                localStorage.setItem('2048_alltime_human_score', this.allTimeHumanBest);
-                if (this.gameOver) {
-                    this.pushGlobalRecord('human', this.allTimeHumanBest, this.allTimeHumanName);
-                }
             }
         }
 
@@ -347,6 +385,7 @@ class GameEngine {
             spawn: spawned,
             highestMerged,
             justMilestone: this.justMilestone,
+            highScoreCelebration,
             recordBreak
         };
     }
@@ -356,11 +395,13 @@ class GameEngine {
         if (type === 'bot') {
             this.allTimeBotBest = Math.max(this.allTimeBotBest, this.score);
             this.allTimeBotName = sanitizedName;
+            this.initialBotBest = this.allTimeBotBest;
             localStorage.setItem('2048_alltime_bot_score', this.allTimeBotBest);
             localStorage.setItem('2048_alltime_bot_name', this.allTimeBotName);
         } else {
             this.allTimeHumanBest = Math.max(this.allTimeHumanBest, this.score);
             this.allTimeHumanName = sanitizedName;
+            this.initialHumanBest = this.allTimeHumanBest;
             localStorage.setItem('2048_alltime_human_score', this.allTimeHumanBest);
             localStorage.setItem('2048_alltime_human_name', this.allTimeHumanName);
         }
@@ -393,6 +434,7 @@ class GameEngine {
                 const data = await resHuman.json();
                 if (data && typeof data.score === 'number' && data.score > this.allTimeHumanBest) {
                     this.allTimeHumanBest = data.score;
+                    this.initialHumanBest = Math.max(this.initialHumanBest, data.score);
                     this.allTimeHumanName = sanitizePlayerName(data.name, 'Grandmaster');
                     localStorage.setItem('2048_alltime_human_score', this.allTimeHumanBest);
                     localStorage.setItem('2048_alltime_human_name', this.allTimeHumanName);
@@ -405,6 +447,7 @@ class GameEngine {
                 const data = await resBot.json();
                 if (data && typeof data.score === 'number' && data.score > this.allTimeBotBest) {
                     this.allTimeBotBest = data.score;
+                    this.initialBotBest = Math.max(this.initialBotBest, data.score);
                     this.allTimeBotName = sanitizePlayerName(data.name, 'Expectimax Bot');
                     localStorage.setItem('2048_alltime_bot_score', this.allTimeBotBest);
                     localStorage.setItem('2048_alltime_bot_name', this.allTimeBotName);
@@ -428,6 +471,8 @@ class GameEngine {
         this.lastMove = prev.lastMove;
         this.milestones = prev.milestones;
         this.usedBotInGame = prev.usedBot;
+        this.passedHumanBestCelebrated = Boolean(prev.passedHuman);
+        this.passedBotBestCelebrated = Boolean(prev.passedBot);
         this.recordPromptShownForCurrentGame = Boolean(prev.recordPromptShown);
         this.gameOver = false;
         this.justMilestone = null;
